@@ -1,0 +1,37 @@
+/* =====================================================================
+   AXISTENCE - vps.css
+   Estilos propios del modulo VPS / Servidores. Los componentes REUTILIZABLES
+   del detalle (tabs, filtros, rejilla, filas clicables, columna de precio,
+   badges de tipo/criticidad, dashboard y barra de acciones) viven en app.css.
+   ===================================================================== */
+
+/* --- Listado ------------------------------------------------------- */
+.tabla th:nth-child(1) { width: 18%; }   /* Referencia */
+.tabla th:nth-child(2) { width: 16%; }   /* Etiqueta */
+.tabla th:nth-child(3) { width: 16%; }   /* Proveedor */
+.tabla-acciones { width: 138px; }        /* 3 acciones: ver / editar / eliminar */
+
+/* --- Selector de moneda / unidad en los precios y specs (input-group) --- */
+.input-group .ax-moneda,
+.input-group .ax-unidad { flex: 0 0 auto; width: auto; max-width: 100px; }
+
+/* --- Subtabs del tab Inventario Lógico (Registros / Configuraciones) ---
+   Heredan el estilo de los tabs principales (.detalle-tabs) y siguen su mismo
+   esquema de espaciado: la barra de subtabs va con inset de 24px (alineada con
+   la nav y los botones) mientras que las tablas quedan a ancho completo. */
+.detalle-subtabs.detalle-tabs { margin: 0 24px; }
+.detalle-subtabs__content { margin-top: 18px; }
+
+/* --- Resumen de specs heredadas de la referencia (modal principal) --- */
+.ref-vps-resumen {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+    padding: 10px 12px;
+    background: var(--c-surface-alt);
+    border: 1px solid var(--c-border);
+    font-size: .85rem;
+    color: var(--c-text-faint);
+}
+.ref-vps-resumen__item { white-space: nowrap; }
+.ref-vps-resumen__item strong { color: var(--c-text); font-weight: 600; }

@@ -1,0 +1,12 @@
+/* =====================================================================
+   AXISTENCE - dominios.css
+   Estilos propios del modulo Dominios. Los componentes del detalle
+   (viewProducto): tabs, filtros, rejilla, filas clicables y columna de
+   precio son reutilizables y viven en app.css.
+   ===================================================================== */
+
+/* --- Listado ------------------------------------------------------- */
+.tabla th:nth-child(1) { width: 24%; }   /* Dominio */
+.tabla th:nth-child(2) { width: 18%; }   /* Proveedor */
+.tabla th:nth-child(3) { width: 16%; }   /* Servidor / VPS */
+.tabla-acciones { width: 138px; }        /* 3 acciones: ver / editar / eliminar */

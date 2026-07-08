@@ -1,0 +1,467 @@
+/* =====================================================================
+   AXISTENCE - proyectos.css
+   Estilos propios del modulo Proyectos. Los componentes del detalle
+   (tabs, filtros, rejilla, filas clicables) son reutilizables y viven
+   en app.css. Aqui solo anchos de columna y detalles propios.
+   ===================================================================== */
+
+/* --- Listado ------------------------------------------------------- */
+.tabla th:nth-child(1) { width: 30%; }   /* Proyecto */
+.tabla th:nth-child(2) { width: 22%; }   /* Cliente */
+.tabla th:nth-child(3) { width: 14%; }   /* Estado */
+.tabla-acciones { width: 138px; }        /* 3 acciones: ver / editar / eliminar */
+
+/* --- Estado del proyecto (chip neutro, recto, monocromo slate) ----- */
+.badge-estado--proyecto {
+    color: var(--c-text); background: var(--c-surface-alt);
+    border-color: var(--c-border);
+}
+
+/* --- Detalle: descripcion a todo el ancho de la rejilla ------------ */
+.detalle__grid-full { grid-column: 1 / -1; }
+.detalle__grid-full dd { white-space: pre-line; }
+
+/* --- Barra de pestañas con accion a la derecha (boton "Archivadas") -
+   Envuelve la nav de tabs y una accion alineada a la derecha, en la misma
+   linea. La linea inferior pasa al contenedor para que cruce todo el ancho. */
+.detalle-tabs-barra {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 4px;
+    border-bottom: 1px solid var(--c-border);
+}
+.detalle-tabs-barra .detalle-tabs.nav-tabs {
+    flex: 1 1 auto;
+    margin-top: 0;
+    border-bottom: 0;
+}
+.detalle-tabs-barra__accion { flex: 0 0 auto; margin-bottom: 6px; }
+
+/* =====================================================================
+   Tablero Kanban (viewProyecto). Maquetado limpio y funcional: columnas
+   en fila con scroll horizontal, tarjetas rectas (estetica de la casa).
+   El pulido visual fino queda para una etapa posterior.
+   ===================================================================== */
+.kanban {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    overflow-x: auto;
+    padding: 4px 2px 12px;
+    min-height: 220px;
+}
+
+.kanban__estado {
+    color: var(--c-text-muted);
+    padding: 24px 4px;
+    margin: 0;
+}
+
+/* Contenedor arrastrable de las columnas (reorden horizontal). */
+.kanban__cols {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+}
+
+.kanban__col--fantasma { opacity: .4; }
+
+/* --- Columna ------------------------------------------------------- */
+.kanban__col {
+    flex: 0 0 280px;
+    max-width: 280px;
+    background: var(--c-surface-alt);
+    border: 1px solid var(--c-border);
+    display: flex;
+    flex-direction: column;
+    max-height: 70vh;
+}
+
+.kanban__col-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--c-border);
+    cursor: grab;
+}
+.kanban__col-head:active { cursor: grabbing; }
+
+/* Asa de reordenamiento de columna. */
+.kanban__col-grip {
+    color: var(--c-text-faint);
+    flex: 0 0 auto;
+    font-size: .95rem;
+}
+.kanban__col-grip:hover { color: var(--c-text-muted); }
+
+.kanban__col-nombre {
+    font-weight: 600;
+    color: var(--c-text);
+    flex: 1 1 auto;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.kanban__col-conteo {
+    font-size: .78rem;
+    color: var(--c-text-muted);
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    padding: 0 7px;
+    line-height: 1.6;
+    min-width: 22px;
+    text-align: center;
+}
+
+.kanban__col-acciones {
+    display: flex;
+    gap: 4px;
+    flex: 0 0 auto;
+}
+
+.kanban__colbtn {
+    border: 1px solid var(--c-border);
+    background: var(--c-surface);
+    color: var(--c-text-muted);
+    width: 26px;
+    height: 26px;
+    line-height: 1;
+    border-radius: 3px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: .82rem;
+}
+.kanban__colbtn:hover { background: var(--c-border); color: var(--c-text); }
+.kanban__colbtn--peligro:hover {
+    background: var(--c-danger); color: var(--c-on-brand); border-color: var(--c-danger);
+}
+
+/* Boton/tile para agregar una columna al final del tablero. */
+.kanban__add-col {
+    flex: 0 0 200px;
+    align-self: flex-start;
+    border: 1px dashed var(--c-border-strong);
+    background: transparent;
+    color: var(--c-text-muted);
+    padding: 12px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-size: .88rem;
+}
+.kanban__add-col:hover { background: var(--c-surface-alt); color: var(--c-text); }
+
+/* --- Lista arrastrable (destino de Sortable) ----------------------- */
+.kanban__lista {
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow-y: auto;
+    flex: 1 1 auto;
+    min-height: 60px;
+}
+
+/* --- Tarjeta (tarea) ----------------------------------------------- */
+.kanban__card {
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    padding: 10px 11px;
+    cursor: grab;
+}
+.kanban__card:active { cursor: grabbing; }
+
+.kanban__card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+/* Check de completado en la tarjeta (verde al marcar). */
+.kanban__check {
+    border: 0;
+    background: transparent;
+    color: var(--c-text-faint);
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+    font-size: 1.1rem;
+    display: inline-flex;
+    align-items: center;
+}
+.kanban__check:hover { color: var(--c-success); }
+.kanban__check.is-completada { color: var(--c-success); }
+.kanban__check:disabled { opacity: .5; cursor: default; }
+
+/* Tarjeta marcada como completada. */
+.kanban__card--completada { border-color: var(--c-success); }
+.kanban__card--completada .kanban__card-titulo {
+    text-decoration: line-through;
+    color: var(--c-text-muted);
+}
+
+.kanban__card-titulo {
+    font-size: .9rem;
+    font-weight: 600;
+    color: var(--c-text);
+    margin: 0 0 4px;
+    line-height: 1.3;
+}
+
+.kanban__card-desc {
+    font-size: .82rem;
+    color: var(--c-text-muted);
+    margin: 0;
+    white-space: pre-line;
+}
+
+.kanban__card-pie {
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px solid var(--c-line);
+}
+
+.kanban__card-resp {
+    font-size: .76rem;
+    color: var(--c-text-muted);
+}
+
+/* Estados de arrastre de Sortable.js */
+.kanban__card--fantasma { opacity: .4; }
+.kanban__card--arrastrando { cursor: grabbing; }
+
+/* --- Chip de prioridad --------------------------------------------- */
+.kanban__prioridad {
+    display: inline-block;
+    font-size: .7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .02em;
+    padding: 1px 7px;
+    border: 1px solid var(--c-border);
+    color: var(--c-text-muted);
+    background: var(--c-surface-alt);
+}
+.kanban__prioridad--baja    { border-color: var(--c-border); }
+.kanban__prioridad--media   { border-color: var(--c-border-strong); color: var(--c-text); }
+.kanban__prioridad--alta    { border-color: var(--c-danger); color: var(--c-danger); }
+.kanban__prioridad--critica { border-color: var(--c-danger); color: var(--c-on-brand); background: var(--c-danger); }
+
+/* --- Detalle de tarjeta (modal) ------------------------------------ */
+.kanban-detalle__lista {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+.kanban-detalle__lista li {
+    padding: 7px 0;
+    border-bottom: 1px solid var(--c-line);
+    font-size: .88rem;
+    color: var(--c-text);
+}
+.kanban-detalle__lista li:last-child { border-bottom: 0; }
+
+.kanban-detalle__fecha {
+    font-size: .78rem;
+    color: var(--c-text-muted);
+}
+
+/* Layout de dos columnas: info a la izquierda, comentarios a la derecha. */
+.kanban-detalle {
+    display: flex;
+    gap: 24px;
+    align-items: flex-start;
+}
+.kanban-detalle__main { flex: 1 1 auto; min-width: 0; }
+.kanban-detalle__side {
+    flex: 0 0 320px;
+    max-width: 340px;
+    display: flex;
+    flex-direction: column;
+    border-left: 1px solid var(--c-line);
+    padding-left: 20px;
+    align-self: stretch;
+}
+@media (max-width: 768px) {
+    .kanban-detalle { flex-direction: column; }
+    .kanban-detalle__side {
+        flex-basis: auto; max-width: none;
+        border-left: 0; padding-left: 0;
+        border-top: 1px solid var(--c-line); padding-top: 16px;
+    }
+}
+
+/* --- Descripción de la tarea (sección central, editable) ----------- */
+.kanban-desc__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.kanban-desc__texto {
+    white-space: pre-line;
+    word-break: break-word;
+    font-size: .92rem;
+    line-height: 1.55;
+    color: var(--c-text);
+    background: var(--c-surface-alt);
+    border: 1px solid var(--c-border);
+    padding: 12px 14px;
+    min-height: 64px;
+}
+.kanban-desc__acciones {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+/* --- Responsables (chips asignados + select para asignar) ---------- */
+.kanban-resp {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+}
+.kanban-resp__vacio { margin: 0; }
+
+.kanban-resp__asignados {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.kanban-resp__chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 6px 3px 10px;
+    font-size: .82rem;
+    border: 1px solid var(--c-brand);
+    background: var(--c-brand);
+    color: var(--c-on-brand);
+    border-radius: 3px;
+}
+.kanban-resp__quitar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    background: transparent;
+    color: var(--c-on-brand);
+    padding: 0 2px;
+    font-size: .72rem;
+    cursor: pointer;
+    opacity: .8;
+}
+.kanban-resp__quitar:hover { opacity: 1; }
+.kanban-resp__quitar:disabled { cursor: default; opacity: .5; }
+
+.kanban-resp__select {
+    max-width: 260px;
+}
+
+/* --- Panel de comentarios ------------------------------------------ */
+.kanban-coment__lista {
+    list-style: none;
+    margin: 0 0 12px;
+    padding: 0;
+    max-height: 340px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.kanban-coment__vacio { padding: 8px 0; }
+
+.kanban-coment__item {
+    background: var(--c-surface-alt);
+    border: 1px solid var(--c-border);
+    padding: 8px 10px;
+}
+.kanban-coment__meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    align-items: baseline;
+    margin-bottom: 3px;
+}
+.kanban-coment__autor {
+    font-weight: 600;
+    font-size: .82rem;
+    color: var(--c-text);
+}
+.kanban-coment__fecha {
+    font-size: .74rem;
+    color: var(--c-text-muted);
+    white-space: nowrap;
+}
+.kanban-coment__texto {
+    margin: 0;
+    font-size: .85rem;
+    color: var(--c-text);
+    white-space: pre-line;
+    word-break: break-word;
+}
+.kanban-coment__form { margin-top: auto; }
+
+/* --- Panel de tarjetas archivadas (modal) -------------------------- */
+.kanban-archivadas {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.kanban-archivadas__vacio {
+    padding: 12px 2px;
+    margin: 0;
+    font-size: .9rem;
+}
+.kanban-archivadas__item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--c-border);
+    background: var(--c-surface);
+}
+.kanban-archivadas__info {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    min-width: 0;
+}
+.kanban-archivadas__titulo {
+    font-weight: 600;
+    font-size: .9rem;
+    color: var(--c-text);
+    word-break: break-word;
+}
+.kanban-archivadas__meta {
+    font-size: .78rem;
+    color: var(--c-text-muted);
+}
+.kanban-archivadas__resp {
+    font-size: .78rem;
+    color: var(--c-text-muted);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.kanban-archivadas__item .btn { flex: 0 0 auto; white-space: nowrap; }

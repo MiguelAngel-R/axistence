@@ -1,0 +1,582 @@
+/* =====================================================================
+   AXISTENCE - app.css
+   Shell de la aplicacion (sidebar + topbar + contenido) para todas las
+   vistas privadas. Estetica recta y monocroma. El sidebar es fijo en
+   escritorio y deslizable (con fondo) en movil.
+   ===================================================================== */
+
+.app {
+    display: flex;
+    min-height: 100vh;
+}
+
+/* --- Sidebar -------------------------------------------------------- */
+.app-sidebar {
+    width: 248px;
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    background: var(--c-brand);
+    color: var(--c-on-brand);
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    z-index: 1040;
+}
+
+.app-sidebar__brand {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-5);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.app-sidebar__logo { width: 28px; height: 28px; flex: none; color: #ffffff; }
+.app-sidebar__name { font-size: 16px; font-weight: 700; letter-spacing: 0.18em; }
+
+.app-nav { flex: 1; padding: var(--space-3) 0; }
+.app-nav__title {
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #64748b;
+    padding: var(--space-4) var(--space-5) var(--space-2);
+}
+.app-nav__item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    /* Densidad compacta: 5px vertical para optimizar el alto y evitar scroll. */
+    padding: 5px var(--space-5);
+    color: #cbd5e1;
+    text-decoration: none;
+    font-size: 14px;
+    border-left: 3px solid transparent;
+    transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast);
+}
+.app-nav__item i { font-size: 17px; width: 20px; text-align: center; }
+.app-nav__item:hover { background: rgba(255, 255, 255, 0.05); color: #ffffff; }
+.app-nav__item.is-active {
+    background: rgba(255, 255, 255, 0.07);
+    color: #ffffff;
+    border-left-color: #ffffff;
+}
+
+.app-sidebar__foot {
+    padding: var(--space-4) var(--space-5);
+    font-size: 11px;
+    color: #64748b;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* --- Columna principal --------------------------------------------- */
+.app-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.app-topbar {
+    position: sticky;
+    top: 0;
+    z-index: 1020;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: 0 var(--space-5);
+    background: var(--c-surface);
+    border-bottom: 1px solid var(--c-line);
+}
+.app-topbar__toggle {
+    width: 38px; height: 38px;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 18px; color: var(--c-text);
+    background: transparent;
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius-button);
+    cursor: pointer;
+}
+.app-topbar__toggle:hover { background: var(--c-surface-alt); }
+.app-topbar__title { font-size: 16px; font-weight: 600; margin: 0; }
+
+.app-topbar__user { margin-left: auto; display: flex; align-items: center; gap: var(--space-3); }
+.app-user { display: flex; flex-direction: column; text-align: right; line-height: 1.25; }
+.app-user__name { font-size: 13.5px; font-weight: 600; color: var(--c-text); }
+.app-user__role { font-size: 11px; color: var(--c-text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.app-user__avatar {
+    width: 38px; height: 38px; flex: none;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--c-brand); color: #ffffff;
+    font-size: 13px; font-weight: 600; letter-spacing: 0.03em;
+    /* rectangular: sin border-radius */
+}
+
+.app-content {
+    flex: 1;
+    padding: 0 0 80px; /* sin margen lateral: el contenido (tabla) ocupa todo el ancho.
+                          Cada bloque interno (toolbar, formularios) pone su propio padding. */
+}
+
+/* --- Footer fijo y dinamico (paginador, acciones, info) ------------ */
+.app-footer {
+    display: none;
+    position: sticky;
+    bottom: 0;
+    z-index: 1015;
+    align-items: center;
+    gap: var(--space-4);
+    min-height: 56px;
+    padding: 10px var(--space-5);
+    background: var(--c-surface);
+    border-top: 1px solid var(--c-line);
+}
+.app-footer.is-visible { display: flex; }
+.app-footer__info { font-size: 12.5px; color: var(--c-text-muted); margin-right: auto; }
+.app-footer__actions { display: flex; gap: var(--space-2); }
+
+/* --- Paginador (render de general.js) ------------------------------ */
+/* Contenedor en columna: botones de pagina arriba, selector de filas debajo. */
+.ax-pager-wrap { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.ax-pager { display: inline-flex; align-items: center; gap: 4px; }
+.ax-pager__btn {
+    min-width: 34px; height: 34px; padding: 0 8px;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 13px; color: var(--c-text);
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius-button);
+    cursor: pointer;
+    transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast);
+}
+.ax-pager__btn:hover:not(:disabled):not(.is-active) { background: var(--c-surface-alt); border-color: var(--c-border-strong); }
+.ax-pager__btn.is-active { background: var(--c-brand); border-color: var(--c-brand); color: #fff; cursor: default; }
+.ax-pager__btn:disabled { opacity: 0.45; cursor: default; }
+.ax-pager__ellipsis { min-width: 22px; text-align: center; color: var(--c-text-faint); }
+
+/* Selector dinamico de filas por pagina (30 / 50 / 100). */
+.ax-perpage { display: inline-flex; align-items: center; gap: 8px; margin: 0; }
+.ax-perpage__label {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+    text-transform: uppercase; color: var(--c-text-faint);
+}
+.ax-perpage__select { width: auto; min-width: 74px; }
+
+/* --- Panel de formulario (alta / edicion) -------------------------- */
+.form-panel {
+    background: var(--c-surface);
+    border-top: 1px solid var(--c-line);
+    border-bottom: 1px solid var(--c-line);
+    padding: var(--space-6) var(--space-5);
+}
+.form-panel__head { margin-bottom: var(--space-5); }
+.form-panel__title { font-size: 18px; font-weight: 600; margin-bottom: 2px; }
+.form-panel__sub { font-size: 13.5px; color: var(--c-text-muted); }
+
+/* --- Barra de herramientas de un listado --------------------------- */
+.toolbar {
+    display: flex; align-items: center; gap: var(--space-3);
+    padding: var(--space-5) var(--space-5) 0;  /* el toolbar conserva su margen propio */
+    margin-bottom: var(--space-5); flex-wrap: wrap;
+}
+.toolbar__search { position: relative; flex: 1; min-width: 220px; max-width: 420px; }
+.toolbar__search i {
+    position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+    color: var(--c-text-faint); font-size: 14px; pointer-events: none;
+}
+.toolbar__search .form-control { padding-left: 34px; }
+.toolbar__actions { display: flex; gap: var(--space-2); margin-left: auto; }
+
+/* --- Dropdown de rango de fechas (reutilizable; JS en general.js) --- */
+.ax-dropfecha { position: relative; }
+.ax-dropfecha__panel {
+    position: absolute; z-index: 30; right: 0; margin-top: 4px; width: 250px;
+    background: var(--c-surface); border: 1px solid var(--c-border);
+    padding: var(--space-4); box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+}
+.ax-dropfecha__label {
+    display: block; font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+    text-transform: uppercase; color: var(--c-text-faint); margin-bottom: 3px;
+}
+.ax-dropfecha__panel input[type="date"] { margin-bottom: var(--space-3); }
+.ax-dropfecha__acciones { display: flex; justify-content: flex-end; gap: var(--space-2); }
+
+/* Resaltado de coincidencias del buscador (reutilizable; lo aplica
+   AX.filtrarTabla). Sobrio y monocromo: chip slate, marcos rectos. */
+mark.ax-marca {
+    background: #cbd5e1;          /* slate-300 */
+    color: var(--c-text);
+    font-weight: 600;
+    padding: 0 1px;
+    border-radius: 0;
+}
+
+/* --- Multiselect con buscador + chips (reutilizable) --------------- */
+/* Reemplaza los <select multiple>. Maquetacion; el comportamiento (abrir,
+   filtrar, insertar/quitar chips) se programara luego en JS. */
+.ax-multiselect { position: relative; }
+
+.ax-multiselect__toggle {
+    width: 100%;
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 8px 12px; text-align: left;
+    font-size: 14px; color: var(--c-text-muted);
+    background: var(--c-surface);
+    border: 1px solid var(--c-border); border-radius: var(--radius-button);
+    cursor: pointer;
+    transition: border-color var(--t-fast);
+}
+.ax-multiselect__toggle:hover { border-color: var(--c-border-strong); }
+.ax-multiselect__flecha { font-size: 12px; color: var(--c-text-faint); transition: transform var(--t-fast); }
+.ax-multiselect.is-open .ax-multiselect__flecha { transform: rotate(180deg); }
+
+/* Panel desplegable */
+.ax-multiselect__panel {
+    position: absolute; z-index: 30; left: 0; right: 0; margin-top: 4px;
+    background: var(--c-surface); border: 1px solid var(--c-border);
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+}
+.ax-multiselect__buscar { position: relative; padding: 8px; border-bottom: 1px solid var(--c-border); }
+.ax-multiselect__buscar i {
+    position: absolute; left: 18px; top: 50%; transform: translateY(-50%);
+    color: var(--c-text-faint); font-size: 13px; pointer-events: none;
+}
+.ax-multiselect__buscar input { padding-left: 28px; }
+
+/* Lista de opciones */
+.ax-multiselect__opciones { list-style: none; margin: 0; padding: 4px; max-height: 210px; overflow-y: auto; }
+.ax-multiselect__opciones li {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 10px; font-size: 14px; color: var(--c-text); cursor: pointer;
+}
+.ax-multiselect__opciones li:hover { background: var(--c-surface-alt); }
+.ax-multiselect__opciones li.is-seleccionado { color: var(--c-text-faint); cursor: default; }
+.ax-multiselect__opciones li.is-seleccionado:hover { background: transparent; }
+
+/* Chips seleccionados */
+.ax-multiselect__chips { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.ax-multiselect__chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px 4px 3px 10px; font-size: 13px; color: var(--c-text);
+    background: var(--c-surface-alt); border: 1px solid var(--c-border);
+}
+.ax-multiselect__chip-quitar {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; padding: 0;
+    background: transparent; border: none; border-radius: var(--radius-button);
+    color: var(--c-text-muted); cursor: pointer; font-size: 12px;
+    transition: color var(--t-fast), background var(--t-fast);
+}
+.ax-multiselect__chip-quitar:hover { color: #b91c1c; background: #fef2f2; }
+.ax-multiselect__vacio { font-size: 13px; color: var(--c-text-faint); font-style: italic; }
+
+/* --- Selector segmentado (radios en recuadro) reutilizable --------- */
+.segmentado {
+    display: flex; flex-wrap: wrap; gap: var(--space-4);
+    padding: 10px var(--space-4);
+    border: 1px solid var(--c-border); background: var(--c-surface-alt);
+}
+.segmentado .form-check { margin: 0; }
+
+/* --- Fila combobox + boton "+" (crear relacionado) reutilizable ---- */
+.ref-vps-row { display: flex; gap: 8px; align-items: stretch; }
+.ref-vps-row .ax-combobox { flex: 1; min-width: 0; }
+.ref-vps-row .ref-vps-add { flex: none; }
+
+/* --- Filas de sub-editor (clave/valor, 2FA, etc.) reutilizable ----- */
+.subfila { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.subfila > * { flex: 1; min-width: 0; }
+.subfila > .subfila-quitar { flex: none; }
+
+/* Bloque de un 2FA: fila (app/responsable/quitar) + area de llaves. */
+.subfila-2fa { border: 1px solid var(--c-border); padding: 10px; margin-bottom: 10px; background: var(--c-surface-alt); }
+.subfila-2fa .subfila { margin-bottom: 0; }
+.subfila-2fa__llaves { margin-top: 8px; resize: vertical; font-size: 13px; }
+
+/* Lista de llaves de recuperacion (modal de consulta). */
+.llaves-lista { margin: 0; padding-left: 20px; }
+.llaves-lista li { padding: 3px 0; word-break: break-all; }
+.llaves-lista code { font-size: 13px; }
+
+/* --- Badge de tipo (asociacion VPS / administracion dominio, etc.) -- */
+.tipo-badge {
+    display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: 0.02em;
+    padding: 2px 8px; color: var(--c-text-muted);
+    background: var(--c-surface-alt); border: 1px solid var(--c-border);
+}
+.tipo-badge--dedicado   { color: #3730a3; background: #eef2ff; border-color: #c7d2fe; }
+.tipo-badge--compartido { color: var(--c-text-muted); background: var(--c-surface-alt); border-color: var(--c-border); }
+
+/* --- Dashboard superior del detalle (tarjetas de estado) ----------- */
+.dash-cards {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px; margin: 4px 0 20px;
+}
+.dash-card {
+    display: flex; flex-direction: column; gap: 6px; padding: 12px 14px;
+    background: var(--c-surface); border: 1px solid var(--c-border);
+}
+.dash-card__label {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--c-text-faint);
+}
+.dash-card__valor { font-size: 15px; font-weight: 600; color: var(--c-text); }
+
+/* Badge de dias restantes (alerta de color) */
+.dash-badge {
+    display: inline-block; padding: 2px 10px; font-size: 12px; font-weight: 600;
+    border: 1px solid transparent;
+}
+.dash-badge--ok     { color: var(--c-success); background: #f0fdf4; border-color: #c6e6cf; }
+.dash-badge--warn   { color: #9a6a00;          background: #fffbeb; border-color: #f5e2a8; }
+.dash-badge--danger { color: var(--c-danger);  background: #fef2f2; border-color: #f3c9c9; }
+.dash-badge--none   { color: var(--c-text-muted); background: var(--c-surface-alt); border-color: var(--c-border); }
+
+/* --- Barra de accion "Agregar" dentro de un tab del detalle -------- */
+.tab-acciones { display: flex; justify-content: flex-end; padding: 0 24px; margin-bottom: 12px; }
+
+/* --- Badges de criticidad de las notas ----------------------------- */
+.crit-badge {
+    display: inline-block; padding: 2px 9px; font-size: 11px; font-weight: 600;
+    border: 1px solid transparent; white-space: nowrap;
+}
+.crit-badge--informacion { color: var(--c-text-muted); background: var(--c-surface-alt); border-color: var(--c-border); }
+.crit-badge--advertencia { color: #9a6a00;         background: #fffbeb; border-color: #f5e2a8; }
+.crit-badge--importante  { color: #3730a3;         background: #eef2ff; border-color: #c7d2fe; }
+.crit-badge--critica     { color: var(--c-danger); background: #fef2f2; border-color: #f3c9c9; }
+
+/* Filas de notas tintadas segun criticidad (misma paleta que los badges).
+   "Información" no se tinta. Un acento a la izquierda refuerza la prioridad. */
+.nota-row--advertencia > td { background: #fffbeb; box-shadow: inset 3px 0 0 #f5c451; }
+.nota-row--importante  > td { background: #eef2ff; box-shadow: inset 3px 0 0 #818cf8; }
+.nota-row--critica     > td { background: #fef2f2; box-shadow: inset 3px 0 0 var(--c-danger); }
+/* El acento (borde izquierdo) solo en la primera celda de la fila. */
+.nota-row--advertencia > td:not(:first-child),
+.nota-row--importante  > td:not(:first-child),
+.nota-row--critica     > td:not(:first-child) { box-shadow: none; }
+
+/* --- Combobox: input autocomplete + dropdown (JS en general.js) --- */
+.ax-combobox { position: relative; display: flex; }
+.ax-combobox [data-rol="input"] { flex: 1; padding-right: 36px; }
+.ax-combobox__toggle {
+    position: absolute; right: 0; top: 0; height: 100%; width: 34px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: transparent; border: none; border-left: 1px solid var(--c-border);
+    color: var(--c-text-muted); cursor: pointer; transition: color var(--t-fast), transform var(--t-fast);
+}
+.ax-combobox__toggle:hover { color: var(--c-text); }
+.ax-combobox.is-open .ax-combobox__toggle { transform: rotate(180deg); }
+.ax-combobox__panel {
+    position: absolute; z-index: 30; top: 100%; left: 0; right: 0; margin-top: 2px;
+    max-height: 210px; overflow-y: auto; list-style: none; padding: 4px;
+    background: var(--c-surface); border: 1px solid var(--c-border);
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+}
+.ax-combobox__panel li {
+    padding: 7px 10px; font-size: 14px; color: var(--c-text); cursor: pointer;
+}
+.ax-combobox__panel li:hover { background: var(--c-surface-alt); }
+.ax-combobox__panel li.is-seleccionado { color: var(--c-text-faint); }
+.ax-combobox__vacio { color: var(--c-text-faint); font-style: italic; cursor: default; }
+
+/* --- Enlace cruzado entre productos (deep linking; JS en general.js) --- */
+/* Texto relacionado que lleva al detalle de otro producto. Sobrio: slate
+   con subrayado y un pequeño icono que indica que navega. */
+.ax-enlace {
+    color: var(--c-text);
+    text-decoration: underline;
+    text-decoration-color: var(--c-border-strong);
+    text-underline-offset: 2px;
+    text-decoration-thickness: 1px;
+    cursor: pointer;
+}
+.ax-enlace:hover { color: var(--c-text); text-decoration-color: var(--c-text); }
+.ax-enlace__icono { font-size: 0.72em; margin-left: 3px; opacity: 0.5; vertical-align: baseline; }
+.ax-enlace:hover .ax-enlace__icono { opacity: 0.9; }
+
+/* =====================================================================
+   Detalle de producto (viewProducto) - REUTILIZABLE por todos los
+   modulos de producto (VPS, Dominios, SSL, Correo, Hosting, Otros).
+   Cada modulo solo define los anchos de columna de su listado.
+   ===================================================================== */
+
+/* Columna de precio (alineada a la derecha, numeros tabulares) */
+.col-precio { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Filas clicables (abren el detalle) */
+.tabla--clic tbody tr { cursor: pointer; }
+.tabla--clic tbody tr:hover { background: var(--c-surface-alt); }
+
+/* --- Contenedor del detalle ---------------------------------------- */
+.detalle { padding: 20px 24px 8px; }
+
+.detalle__head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; padding-bottom: 16px; margin-bottom: 8px;
+    border-bottom: 1px solid var(--c-border);
+}
+/* Lado izquierdo de la cabecera: flecha "Volver" + eyebrow/titulo. */
+.detalle__head-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
+
+/* Flecha "Volver": unica accion de retorno del detalle (reemplaza al footer con
+   botones). Se situa inmediatamente a la izquierda del titulo del producto. */
+.detalle__volver {
+    flex: none;
+    width: 38px; height: 38px;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 20px; line-height: 1; color: var(--c-text-muted);
+    background: transparent;
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius-button);
+    cursor: pointer;
+    transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast);
+}
+.detalle__volver:hover { background: var(--c-surface-alt); color: var(--c-text); border-color: var(--c-border-strong); }
+
+.detalle__eyebrow {
+    display: block; font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--c-text-faint);
+}
+.detalle__title { margin: 2px 0 0; font-size: 22px; font-weight: 600; color: var(--c-text); }
+
+.detalle__seccion { margin-top: 22px; }
+.detalle__seccion--primera { margin-top: 0; }   /* cuando el detalle no lleva encabezado */
+.detalle__seccion-titulo {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; font-weight: 600; letter-spacing: 0.02em;
+    text-transform: uppercase; color: var(--c-text-muted); margin-bottom: 10px;
+}
+
+/* Rejilla de datos generales (definiciones) */
+.detalle__grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 14px 24px; margin: 0;
+}
+.detalle__grid dt {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+    text-transform: uppercase; color: var(--c-text-faint); margin-bottom: 2px;
+}
+.detalle__grid dd { margin: 0; font-size: 14.5px; color: var(--c-text); }
+
+/* --- Barra de filtros del detalle ---------------------------------- */
+.detalle-filtros {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    margin: 22px 0 12px;
+}
+.detalle-filtros .toolbar__search { flex: 1 1 260px; }
+
+/* --- Pestanas (tabs) del detalle ----------------------------------- */
+/* Estilo "subrayado": el tab activo se marca con una linea inferior del
+   color estandar (slate oscuro). Marcos rectos, separado de la tabla. */
+.detalle-tabs.nav-tabs {
+    border-bottom: 1px solid var(--c-border); gap: 4px; flex-wrap: wrap; margin-top: 4px;
+}
+.detalle-tabs.nav-tabs .nav-link {
+    display: inline-flex; align-items: center; gap: 7px;
+    border: 0; border-bottom: 2px solid transparent; border-radius: 0;
+    margin-bottom: -1px; padding: 9px 12px;
+    color: var(--c-text-muted); font-size: 13px; font-weight: 500; background: transparent;
+}
+.detalle-tabs.nav-tabs .nav-link i { font-size: 15px; }
+.detalle-tabs.nav-tabs .nav-link:hover {
+    color: var(--c-text); background: transparent; border-bottom-color: var(--c-border-strong);
+}
+.detalle-tabs.nav-tabs .nav-link.active {
+    color: var(--c-text); font-weight: 600; background: transparent;
+    border-bottom-color: var(--c-text);
+}
+/* La tabla ocupa el ancho completo (full-bleed), separada de las pestanas */
+.detalle-tabs__content { margin: 18px -24px 0; }
+.detalle-tabs__content .tab-pane { outline: none; }
+
+/* Fix de desfase (tab "Información"): su contenido NO es una tabla full-bleed
+   sino una rejilla de datos / titulos, por lo que el margen negativo del
+   contenedor lo pegaba al borde izquierdo. Se re-inserta 24px para alinearlo
+   simetricamente con la linea divisoria de las pestañas. Las tablas (.tabla-wrap)
+   siguen ocupando todo el ancho. */
+.detalle-tabs__content .detalle__grid,
+.detalle-tabs__content .detalle__seccion-titulo { padding-left: 24px; padding-right: 24px; }
+
+/* --- Tabla de datos reutilizable ----------------------------------- */
+.tabla-wrap { background: var(--c-surface); border: 1px solid var(--c-line); overflow-x: auto; }
+.tabla { margin: 0; width: 100%; font-variant-numeric: tabular-nums; }
+.tabla thead th {
+    font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--c-text-muted); background: var(--c-surface-alt);
+    border-bottom: 1px solid var(--c-border);
+    padding: 12px 16px; white-space: nowrap; text-align: left;
+}
+.tabla tbody td {
+    /* Filas compactas: el alto de cada fila no supera ~30px (padding minimo +
+       botones de accion reducidos). Aplica a todas las tablas de datos. */
+    padding: 3px 16px; vertical-align: middle;
+    border-bottom: 1px solid var(--c-line);
+    font-size: 13.5px; color: var(--c-text); line-height: 1.4;
+}
+/* Botones de accion dentro de una fila: reducidos para respetar el alto de 30px. */
+.tabla tbody .btn-icono { width: 24px; height: 24px; }
+.tabla tbody .btn-icono + .btn-icono { margin-left: 4px; }
+.tabla tbody td:first-child { font-weight: 500; }
+.tabla tbody tr:last-child td { border-bottom: 0; }
+.tabla tbody tr:hover td { background: var(--c-surface-alt); }
+.tabla-vacia { text-align: center; color: var(--c-text-muted); padding: 28px 16px !important; }
+.tabla-acciones { text-align: right; white-space: nowrap; }
+
+/* --- Insignias de estado ------------------------------------------- */
+.badge-estado {
+    display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: 0.03em;
+    padding: 3px 10px; border: 1px solid transparent;
+}
+.badge-estado--activo   { color: var(--c-success); background: #f0fdf4; border-color: #c6e6cf; }
+.badge-estado--inactivo { color: #9a3412; background: #fff7ed; border-color: #f3d3b3; }
+
+/* --- Botones de icono (acciones de fila) --------------------------- */
+.btn-icono {
+    width: 32px; height: 32px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: transparent; color: var(--c-text-muted);
+    border: 1px solid var(--c-border); border-radius: var(--radius-button);
+    cursor: pointer; transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast);
+}
+.btn-icono + .btn-icono { margin-left: 6px; }
+.btn-icono:hover { background: var(--c-surface-alt); color: var(--c-text); border-color: var(--c-border-strong); }
+.btn-icono--peligro:hover { color: var(--c-danger); border-color: var(--c-danger); background: #fef2f2; }
+.btn-icono--exito:hover   { color: var(--c-success); border-color: var(--c-success); background: #f0fdf4; }
+
+/* --- Avisos (toasts) ----------------------------------------------- */
+.ax-toasts { position: fixed; right: 20px; bottom: 20px; z-index: 2000; display: flex; flex-direction: column; gap: 8px; }
+.ax-toast {
+    min-width: 220px; max-width: 340px; padding: 12px 16px;
+    font-size: 13.5px; color: #fff; background: var(--c-brand);
+    border-left: 3px solid #334155; box-shadow: 0 6px 24px rgba(2, 6, 23, 0.25);
+    transition: opacity 0.25s, transform 0.25s;
+}
+.ax-toast--exito { border-left-color: var(--c-success); }
+.ax-toast--error { border-left-color: var(--c-danger); }
+.ax-toast.is-out { opacity: 0; transform: translateX(20px); }
+
+/* --- Responsivo: sidebar deslizable en movil ----------------------- */
+@media (max-width: 991.98px) {
+    .app-sidebar {
+        position: fixed;
+        top: 0; left: 0;
+        transform: translateX(-100%);
+        transition: transform 0.2s ease;
+    }
+    .app-sidebar.is-open {
+        transform: translateX(0);
+        box-shadow: 0 0 40px rgba(2, 6, 23, 0.35);
+    }
+    .app-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(2, 6, 23, 0.5);
+        z-index: 1030;
+    }
+}
+@media (max-width: 575.98px) {
+    .app-user { display: none; }
+    .app-content { padding: var(--space-4); }
+}

@@ -1,0 +1,167 @@
+/* =====================================================================
+   AXISTENCE - base.css
+   Tema global sobre Bootstrap 5.
+   - Define los tokens de diseno de AXISTENCE.
+   - Sobrescribe las variables de Bootstrap para imponer la estetica:
+       * marcos rectos (border-radius 0 en todo)
+       * boton con maximo 3px de radio
+       * paleta monocroma pizarra (slate), foco en slate (no azul)
+   Este archivo se carga DESPUES de bootstrap.min.css.
+   ===================================================================== */
+
+:root {
+    /* --- Tokens AXISTENCE --------------------------------------------- */
+    --c-brand:         #0f172a;   /* slate 900 - marca / acciones */
+    --c-brand-hover:   #1e293b;   /* slate 800 */
+    --c-brand-active:  #020617;   /* slate 950 */
+
+    --c-bg:            #ffffff;   /* fondo global blanco puro (interfaz limpia) */
+    --c-surface:       #ffffff;
+    --c-surface-alt:   #f8fafc;
+
+    --c-text:          #0f172a;
+    --c-text-muted:    #64748b;
+    --c-text-faint:    #94a3b8;
+    --c-on-brand:      #f1f5f9;
+
+    --c-border:        #cbd5e1;
+    --c-border-strong: #94a3b8;
+    --c-line:          #e2e8f0;
+
+    --c-danger:        #b91c1c;
+    --c-success:       #15803d;
+
+    --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+
+    --radius-button: 3px;         /* unica excepcion a los marcos rectos */
+
+    --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
+    --space-5: 24px; --space-6: 32px; --space-7: 48px;
+
+    --t-fast: 120ms ease;
+
+    /* --- Overrides de Bootstrap -------------------------------------- */
+    --bs-body-font-family: var(--font-sans);
+    --bs-body-color: var(--c-text);
+    --bs-body-bg: var(--c-bg);
+    --bs-secondary-color: var(--c-text-muted);
+
+    --bs-primary: #0f172a;
+    --bs-primary-rgb: 15, 23, 42;
+    --bs-border-color: var(--c-border);
+
+    /* Marcos rectos en TODOS los componentes de Bootstrap */
+    --bs-border-radius:      0;
+    --bs-border-radius-sm:   0;
+    --bs-border-radius-lg:   0;
+    --bs-border-radius-xl:   0;
+    --bs-border-radius-xxl:  0;
+    --bs-border-radius-2xl:  0;
+    --bs-border-radius-pill: 0;
+}
+
+/* --- Render de fuente global (Inter) -------------------------------- */
+body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    letter-spacing: -0.006em;
+}
+
+/* --- Botones: unico radio permitido (3px) ---------------------------- */
+.btn {
+    border-radius: var(--radius-button);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    padding-top: 0.6rem;
+    padding-bottom: 0.6rem;
+}
+/* Variante pequena: recupera un tamano compacto (el override de .btn
+   anulaba el padding de btn-sm de Bootstrap). */
+.btn-sm {
+    padding-top: 0.35rem;
+    padding-bottom: 0.35rem;
+    font-size: 12px;
+}
+.btn-primary {
+    --bs-btn-bg: var(--c-brand);
+    --bs-btn-border-color: var(--c-brand);
+    --bs-btn-hover-bg: var(--c-brand-hover);
+    --bs-btn-hover-border-color: var(--c-brand-hover);
+    --bs-btn-active-bg: var(--c-brand-active);
+    --bs-btn-active-border-color: var(--c-brand-active);
+    --bs-btn-disabled-bg: var(--c-brand);
+    --bs-btn-disabled-border-color: var(--c-brand);
+}
+
+/* --- Campos de formulario: rectos y con foco en slate ---------------- */
+.form-control,
+.form-select {
+    border-radius: 0;
+    padding-top: 0.55rem;
+    padding-bottom: 0.55rem;
+}
+.form-control:focus,
+.form-select:focus {
+    border-color: var(--c-brand);
+    box-shadow: 0 0 0 0.15rem rgba(var(--bs-primary-rgb), 0.15);
+}
+
+/* Etiquetas de campo: estilo corporativo (mayusculas, tracking) ------- */
+.form-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--c-text-muted);
+    margin-bottom: var(--space-2);
+}
+
+/* Campo de contrasena con boton mostrar/ocultar (reutilizable) -------- */
+.password-field { position: relative; }
+.password-field .form-control { padding-right: 74px; }
+.password-toggle {
+    position: absolute; top: 0; right: 0; height: 100%;
+    padding: 0 12px;
+    display: inline-flex; align-items: center;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--c-text-muted);
+    background: transparent; border: none; border-left: 1px solid var(--c-border);
+    cursor: pointer; transition: color var(--t-fast);
+}
+.password-toggle:hover { color: var(--c-brand); }
+
+/* Alertas rectas ------------------------------------------------------ */
+.alert { border-radius: 0; }
+.alert-danger {
+    color: var(--c-danger);
+    background-color: #fef2f2;
+    border-color: #f1c9c9;
+    border-left: 3px solid var(--c-danger);
+}
+
+/* SweetAlert2: estetica AXISTENCE (marcos rectos, botones slate) ------ */
+.swal2-popup { border-radius: 0; font-family: var(--font-sans); }
+.swal2-title { color: var(--c-text); font-weight: 600; font-size: 20px; }
+.swal2-html-container { color: var(--c-text-muted); font-size: 14.5px; }
+.swal2-actions { gap: 8px; }
+.swal2-styled {
+    border-radius: var(--radius-button);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    box-shadow: none !important;
+}
+.swal2-styled.swal2-confirm {
+    background-color: var(--c-brand) !important;
+    color: #fff !important;
+}
+.swal2-styled.swal2-confirm:hover { background-color: var(--c-brand-hover) !important; }
+.swal2-styled.swal2-confirm.swal2-confirm--peligro { background-color: var(--c-danger) !important; }
+.swal2-styled.swal2-cancel {
+    background-color: transparent !important;
+    color: var(--c-text) !important;
+    border: 1px solid var(--c-border) !important;
+}
+.swal2-styled.swal2-cancel:hover { background-color: var(--c-surface-alt) !important; }
+
+/* Utilidad --------------------------------------------------------------*/
+.is-hidden { display: none !important; }

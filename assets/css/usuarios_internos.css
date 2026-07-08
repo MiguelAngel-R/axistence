@@ -1,0 +1,19 @@
+/* =====================================================================
+   AXISTENCE - usuarios_internos.css
+   Estilos propios del modulo Usuarios internos (compartidos por sus
+   vistas: listado, detalle, formulario). Los componentes reutilizables
+   (tabla, toolbar, badges, paginador) viven en app.css.
+   ===================================================================== */
+
+/* Anchos de columna del listado (8 columnas) */
+.tabla th:nth-child(1) { width: 18%; }   /* Nombre completo */
+.tabla th:nth-child(2) { width: 12%; }   /* Usuario */
+.tabla th:nth-child(3) { width: 12%; }   /* Rol */
+.tabla th:nth-child(4) { width: 18%; }   /* Correo */
+.tabla th:nth-child(5) { width: 11%; }   /* Telefono */
+.tabla th:nth-child(6) { width: 8%;  }   /* Estado */
+.tabla th:nth-child(7) { width: 13%; }   /* Ultima sesion */
+.tabla-acciones { width: 132px; }        /* 3 acciones: editar, clave, toggle */
+
+/* Texto tenue para la ultima sesion vacia ("Nunca") */
+.text-faint { color: var(--c-text-faint); }

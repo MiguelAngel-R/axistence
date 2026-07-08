@@ -1,0 +1,23 @@
+/* =====================================================================
+   AXISTENCE - otros.css
+   Estilos propios del modulo Otros productos. Los componentes del detalle
+   (tabs, filtros, rejilla, filas clicables, columna de precio) son
+   reutilizables y viven en app.css.
+   ===================================================================== */
+
+/* --- Listado ------------------------------------------------------- */
+.tabla th:nth-child(1) { width: 18%; }   /* Tipo */
+.tabla th:nth-child(2) { width: 24%; }   /* Referencia */
+.tabla th:nth-child(3) { width: 18%; }   /* Proveedor */
+.tabla-acciones { width: 138px; }        /* 3 acciones: ver / editar / eliminar */
+
+/* --- Editor dinamico de atributos (clave-valor) -------------------- */
+.atributos { margin-bottom: 10px; }
+.atributo-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 8px;
+}
+.atributo-row input[data-rol="clave"] { flex: 0 0 240px; }
+.atributo-row input[data-rol="valor"] { flex: 1 1 auto; }

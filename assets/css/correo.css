@@ -1,0 +1,121 @@
+/* =====================================================================
+   AXISTENCE - correo.css
+   Estilos propios del modulo Cuentas de correo. Los componentes del
+   detalle (tabs, filtros, rejilla, filas clicables, columna de precio)
+   son reutilizables y viven en app.css.
+   ===================================================================== */
+
+/* --- Listado ------------------------------------------------------- */
+.tabla th:nth-child(1) { width: 26%; }   /* Cuenta */
+.tabla th:nth-child(2) { width: 18%; }   /* Dominio */
+.tabla th:nth-child(3) { width: 18%; }   /* Cliente */
+.tabla-acciones { width: 138px; }        /* 3 acciones: ver / editar / eliminar */
+
+/* --- Constructor de licencias (modal alta/edicion) ----------------- */
+/* Fila de alta: cantidad + tipo + boton "Agregar". */
+.lic-alta {
+    display: flex;
+    gap: 8px;
+    align-items: stretch;
+}
+.lic-alta__campo { flex: 0 0 110px; }        /* cantidad (angosto) */
+.lic-alta__campo--tipo { flex: 1 1 auto; }   /* tipo (ocupa el resto) */
+.lic-alta__btn { flex: 0 0 auto; white-space: nowrap; }
+
+/* Lista de licencias agregadas: filas rectas, organizadas. */
+.lic-lista {
+    list-style: none;
+    margin: 10px 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.lic-lista__vacio { margin: 0; padding: 6px 2px; font-size: .88rem; }
+.lic-lista__item,
+.lic-lista__total {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 10px;
+    border: 1px solid var(--c-border);
+    background: var(--c-surface);
+}
+/* Numero de cuentas: recuadro fijo a la izquierda. */
+.lic-lista__cant {
+    flex: 0 0 44px;
+    text-align: center;
+    font-weight: 600;
+    color: var(--c-text);
+    background: var(--c-surface-alt);
+    border: 1px solid var(--c-border);
+    padding: 2px 0;
+}
+.lic-lista__tipo { flex: 1 1 auto; min-width: 0; color: var(--c-text); word-break: break-word; }
+.lic-lista__quitar {
+    flex: 0 0 auto;
+    border: 0;
+    background: transparent;
+    color: var(--c-text-muted);
+    cursor: pointer;
+    padding: 2px 4px;
+    line-height: 1;
+}
+.lic-lista__quitar:hover { color: var(--c-peligro, #b91c1c); }
+/* Fila de total: se distingue del resto (sin cuadro editable). */
+.lic-lista__total {
+    background: var(--c-surface-alt);
+    font-weight: 600;
+}
+.lic-lista__total .lic-lista__cant { background: var(--c-surface); }
+
+/* --- Desglose de licencias en el detalle --------------------------- */
+.lic-detalle { list-style: none; margin: 0; padding: 0; }
+.lic-detalle li { padding: 1px 0; }
+
+/* Botón "Volver" reducido (el estandar de 38px es muy grande aqui). */
+.detalle__volver--sm {
+    width: 30px;
+    height: 30px;
+    font-size: 15px;
+}
+
+/* Barra de acciones de un tab (p. ej. "Asignar extensión de espacio").
+   Lleva padding lateral de 24px porque el contenido de los tabs es full-bleed. */
+.detalle-tab-acciones {
+    display: flex;
+    justify-content: flex-end;
+    padding: 0 24px;
+    margin-bottom: 12px;
+}
+
+/* --- Cuentas de una licencia (drill-down dentro del tab Licencias) -- */
+/* El contenedor de tabs es full-bleed (margin lateral -24px) para que las
+   tablas peguen a los bordes; el head lleva su propio padding lateral de
+   24px para alinearse con las pestañas y no quedar pegado a los costados. */
+.licencia-cuentas__head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+    padding: 0 24px;
+}
+.licencia-cuentas__titulo {
+    margin: 2px 0 0;
+    font-size: 1rem;
+    color: var(--c-text);
+}
+.licencia-cuentas__crear {
+    margin-left: auto;
+    white-space: nowrap;
+}
+
+/* Celda de contraseña (texto plano) con boton mostrar/ocultar. */
+.clave-celda { display: inline-flex; align-items: center; gap: 6px; }
+.clave-celda__valor {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: .06em;
+    min-width: 72px;
+    word-break: break-all;
+}
+.clave-celda__ver { width: 24px; height: 24px; }
