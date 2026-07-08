@@ -379,6 +379,9 @@ $(function () {
 
     function abrirDetalle(id) {
         detalleId = id;
+        // Exponer el id del VPS actual para modulos hermanos del detalle
+        // (p. ej. vps_consola.js lee #vistaDetalle[data-vps-id]).
+        $vistaDetalle.attr("data-vps-id", id);
         mostrar($vistaDetalle);
         reiniciarFiltrosDetalle();
         cargarDetalleOpciones(id);   // opciones para los modales "Agregar ..."

@@ -18,6 +18,10 @@ $criticidades  = ['Información', 'Advertencia', 'Importante', 'Crítica'];
 $tiposEvento   = ['Sistema Operativo', 'Software', 'Librerías', 'Base de Datos'];
 $servidoresWeb = ['Nginx', 'Apache', 'Otro'];
 
+// URL del server de websockets (consola SSH). Sobrescribible por entorno en
+// produccion; por defecto apunta al server Node local de desarrollo.
+$consolaWsUrl = getenv('AXISTENCE_CONSOLA_WS_URL') ?: 'http://127.0.0.1:3001';
+
 // Definicion de pestañas (orden estricto). 'add' define el boton "Agregar".
 $tabs = [
     ['id' => 'informacion',  'label' => 'Información',      'icon' => 'bi-info-circle'],
@@ -28,6 +32,7 @@ $tabs = [
     ['id' => 'virtualhosts', 'label' => 'Virtual Hosts',    'icon' => 'bi-diagram-3',     'tbody' => 'detVirtualHosts', 'cols' => ['Aplicación', 'ServerName', 'Dominio', 'Servidor', 'Puerto', 'SSL', 'Estado'], 'add' => ['btn' => 'btnAddVirtualHost', 'texto' => 'Agregar virtual host']],
     ['id' => 'historial',    'label' => 'Historial',        'icon' => 'bi-clock-history', 'tbody' => 'detLogs',         'cols' => ['Fecha', 'Usuario', 'Acción', 'Módulo', 'Detalle']],
     ['id' => 'notas',        'label' => 'Notas',            'icon' => 'bi-journal-text',  'tbody' => 'detNotas',        'cols' => ['Fecha', 'Criticidad', 'Autor', 'Nota'],                             'add' => ['btn' => 'btnAddNota',        'texto' => 'Agregar nota']],
+    ['id' => 'consola',      'label' => 'Consola SSH',      'icon' => 'bi-terminal'],
 ];
 ?>
 <div id="vistaDetalle" class="d-none">
@@ -134,6 +139,45 @@ $tabs = [
                             <div><dt>Registrado</dt><dd id="detCreado">—</dd></div>
                             <div><dt>Actualizado</dt><dd id="detActualizado">—</dd></div>
                         </dl>
+
+                    <?php elseif ($t['id'] === 'consola'): ?>
+                        <!-- Tab Consola SSH: terminal en tiempo real (xterm.js) +
+                             panel lateral con el historial de comandos por sesion.
+                             La conexion SSH la mantiene el server Node (websockets);
+                             aqui solo se pide el token y se abre el socket. -->
+                        <div class="consola" data-ws="<?php echo htmlspecialchars($consolaWsUrl); ?>">
+                            <div class="consola__barra">
+                                <label class="consola__campo">
+                                    <span>Credencial</span>
+                                    <select id="consolaCredencial" class="form-select form-select-sm">
+                                        <option value="">— Sin credenciales —</option>
+                                    </select>
+                                </label>
+                                <button type="button" class="btn btn-primary btn-sm" id="consolaConectar">
+                                    <i class="bi bi-plug" aria-hidden="true"></i> Conectar
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" id="consolaDesconectar" disabled>
+                                    <i class="bi bi-x-circle" aria-hidden="true"></i> Desconectar
+                                </button>
+                                <span class="consola__estado" id="consolaEstado" data-estado="off">Desconectado</span>
+                            </div>
+
+                            <div class="consola__cuerpo">
+                                <div class="consola__term" id="consolaTerminal"></div>
+                                <aside class="consola__lateral">
+                                    <div class="consola__lateral-head">
+                                        <span><i class="bi bi-clock-history" aria-hidden="true"></i> Historial</span>
+                                        <button type="button" class="btn btn-icon btn-sm" id="consolaRefrescar" title="Refrescar historial">
+                                            <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
+                                        </button>
+                                    </div>
+                                    <ul class="consola__sesiones" id="consolaSesiones">
+                                        <li class="consola__vacio">Sin sesiones.</li>
+                                    </ul>
+                                    <div class="consola__comandos" id="consolaComandos"></div>
+                                </aside>
+                            </div>
+                        </div>
 
                     <?php elseif ($t['id'] === 'inventario'): ?>
                         <!-- Tab Inventario Lógico dividido en subtabs:

@@ -12,8 +12,9 @@ $tituloSeccion = 'VPS / Servidores';
 $moduloActivo  = 'vps';
 
 // Archivos propios del modulo (compartidos por todas sus vistas).
-$cssPagina = ['assets/css/vps.css'];
-$jsPagina  = ['assets/js/vps.js'];
+// vps_consola.* alimentan la pestaña Consola SSH del detalle (viewProducto).
+$cssPagina = ['assets/css/vps.css', 'assets/css/vps_consola.css'];
+$jsPagina  = ['assets/js/vps.js', 'assets/js/vps_consola.js'];
 
 // Tipos de asociacion validos (enum tipo_asociacion_vps).
 $tiposAsociacion = ['Compartido', 'Dedicado'];
