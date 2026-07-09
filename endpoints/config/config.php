@@ -36,3 +36,10 @@ define('CONSOLA_TOKEN_TTL', (int)(getenv('AXISTENCE_CONSOLA_TOKEN_TTL') ?: 60));
 // EN PRODUCCION define AXISTENCE_CONSOLA_CRYPT_KEY con un valor aleatorio y
 // GUARDALO A BUEN RECAUDO: si se pierde, las credenciales no se pueden descifrar.
 define('CONSOLA_CRYPT_KEY', getenv('AXISTENCE_CONSOLA_CRYPT_KEY') ?: 'axistence-consola-crypt-dev-cambiar-en-produccion');
+
+// Clave compartida SOLO entre el server Node y PHP. Protege los endpoints
+// server-to-server de la consola (validar/conexion/sesion/comando/huerfanas):
+// Node la envia en la cabecera X-Consola-Node-Key y PHP la exige. Impide que
+// un tercero llame esos endpoints aunque tenga un token robado.
+// EN PRODUCCION define AXISTENCE_CONSOLA_NODE_KEY (mismo valor en Node y PHP).
+define('CONSOLA_NODE_KEY', getenv('AXISTENCE_CONSOLA_NODE_KEY') ?: 'axistence-consola-node-dev-cambiar-en-produccion');

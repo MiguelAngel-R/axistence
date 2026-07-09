@@ -119,3 +119,17 @@ function consola_token_de_body(): array
     }
     return [$payload, $in];
 }
+
+/**
+ * Exige la clave compartida Node<->PHP (cabecera X-Consola-Node-Key). Corta
+ * con 403 si falta o no coincide. Blinda los endpoints server-to-server de la
+ * consola para que solo el server Node pueda invocarlos.
+ * Requiere response.php (json_error) y config.php (CONSOLA_NODE_KEY).
+ */
+function consola_requiere_node_key(): void
+{
+    $enviada = (string)($_SERVER['HTTP_X_CONSOLA_NODE_KEY'] ?? '');
+    if ($enviada === '' || !hash_equals(CONSOLA_NODE_KEY, $enviada)) {
+        json_error('No autorizado', 403);
+    }
+}

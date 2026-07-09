@@ -24,16 +24,20 @@ const { Client: SSHClient } = ssh2;
 
 // --- Configuracion (env con defaults de desarrollo) ------------------
 const PUERTO      = Number(process.env.AXISTENCE_WS_PORT || 3001);
-const PHP_URL     = (process.env.AXISTENCE_PHP_URL || 'http://127.0.0.1:8123').replace(/\/$/, '');
+const PHP_URL     = (process.env.AXISTENCE_PHP_URL || 'http://127.0.0.1:8080').replace(/\/$/, '');
 const CORS_ORIGIN = process.env.AXISTENCE_WS_CORS_ORIGIN || '*';
+// Clave compartida Node<->PHP: se envia en cada llamada a los endpoints
+// server-to-server. Debe coincidir con CONSOLA_NODE_KEY en config.php.
+const NODE_KEY    = process.env.AXISTENCE_CONSOLA_NODE_KEY || 'axistence-consola-node-dev-cambiar-en-produccion';
 const VALIDAR_URL       = `${PHP_URL}/endpoints/vps/consola_validar.php`;
 const CONEXION_URL      = `${PHP_URL}/endpoints/vps/consola_conexion.php`;
 const SESION_ABRIR_URL  = `${PHP_URL}/endpoints/vps/consola_sesion_abrir.php`;
 const COMANDO_URL       = `${PHP_URL}/endpoints/vps/consola_comando.php`;
 const SESION_CERRAR_URL = `${PHP_URL}/endpoints/vps/consola_sesion_cerrar.php`;
+const HUERFANAS_URL     = `${PHP_URL}/endpoints/vps/consola_cerrar_huerfanas.php`;
 // Timeout por inactividad del shell (ms). 0 lo desactiva.
 const IDLE_MS     = Number(process.env.AXISTENCE_SSH_IDLE_MS || 5 * 60 * 1000);
-const VERSION     = '0.4.0'; // Fase 4
+const VERSION     = '0.5.0'; // Fase 7
 
 // --- Express (health-check) ------------------------------------------
 const app = express();
@@ -51,37 +55,18 @@ const io = new Server(server, {
 });
 
 /**
- * Valida un token de consola contra PHP (server-to-server).
- * @param {string} token
- * @returns {Promise<object|null>} payload autorizado o null si no es valido.
- */
-async function validarTokenContraPhp(token) {
-    try {
-        const resp = await fetch(VALIDAR_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token }),
-        });
-        const json = await resp.json().catch(() => null);
-        if (resp.ok && json && json.ok) {
-            return json.data;
-        }
-        return null;
-    } catch (err) {
-        console.error('[consola] Error validando token contra PHP:', err.message);
-        return null;
-    }
-}
-
-/**
- * POST JSON a un endpoint PHP interno. Devuelve `data` si respondio ok,
- * o null (nunca lanza: la persistencia jamas debe romper la consola).
+ * POST JSON a un endpoint PHP interno de la consola. Adjunta la clave
+ * compartida Node<->PHP. Devuelve `data` si respondio ok, o null (nunca
+ * lanza: la persistencia jamas debe romper la consola).
  */
 async function phpPost(url, body) {
     try {
         const resp = await fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Consola-Node-Key': NODE_KEY,
+            },
             body: JSON.stringify(body),
         });
         const json = await resp.json().catch(() => null);
@@ -93,6 +78,35 @@ async function phpPost(url, body) {
     } catch (err) {
         console.error(`[consola] Error llamando ${url}:`, err.message);
         return null;
+    }
+}
+
+/**
+ * Valida un token de consola contra PHP (server-to-server). Devuelve el
+ * motivo real para poder mostrarlo (token invalido, node-key, PHP caido...).
+ * @param {string} token
+ * @returns {Promise<{ok: boolean, data?: object, mensaje?: string}>}
+ */
+async function validarTokenContraPhp(token) {
+    try {
+        const resp = await fetch(VALIDAR_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Consola-Node-Key': NODE_KEY,
+            },
+            body: JSON.stringify({ token }),
+        });
+        const json = await resp.json().catch(() => null);
+        if (resp.ok && json && json.ok) {
+            return { ok: true, data: json.data };
+        }
+        const mensaje = (json && json.mensaje) || `HTTP ${resp.status}`;
+        console.warn(`[consola] Validacion rechazada por PHP (${resp.status}): ${mensaje}`);
+        return { ok: false, mensaje };
+    } catch (err) {
+        console.error('[consola] No se pudo contactar a PHP para validar:', err.message);
+        return { ok: false, mensaje: 'No se pudo contactar al servidor de autorizacion (¿PHP arriba?).' };
     }
 }
 
@@ -209,7 +223,8 @@ function abrirSesionSsh(socket, params, token) {
     const registrarComando = (comando) => {
         if (sesionId) {
             // fire-and-forget: no bloquear el tecleo por la persistencia.
-            phpPost(COMANDO_URL, { token, sesion_id: sesionId, comando });
+            // Se autoriza con la node-key + sesion_id (no el token, que expira).
+            phpPost(COMANDO_URL, { sesion_id: sesionId, comando });
         } else if (!sesionResuelta) {
             comandosPendientes.push(comando);
         }
@@ -249,9 +264,10 @@ function abrirSesionSsh(socket, params, token) {
         console.log(`[consola] SSH cerrado socket=${socket.id} motivo=${motivo}`);
 
         // Cerrar la sesion en BD con el estado final (si llego a crearse).
+        // Autorizado por node-key + sesion_id (el token pudo expirar ya).
         const estado = (motivo === 'conn-error' || motivo === 'shell-error') ? 'error' : 'cerrada';
         if (sesionId) {
-            phpPost(SESION_CERRAR_URL, { token, sesion_id: sesionId, estado });
+            phpPost(SESION_CERRAR_URL, { sesion_id: sesionId, estado });
         }
 
         if (socket.connected) socket.disconnect(true);
@@ -325,12 +341,13 @@ io.on('connection', async (socket) => {
         return;
     }
 
-    const ctx = await validarTokenContraPhp(String(token));
-    if (!ctx) {
-        socket.emit('no_autorizado', { mensaje: 'Token invalido o expirado.' });
+    const val = await validarTokenContraPhp(String(token));
+    if (!val.ok) {
+        socket.emit('no_autorizado', { mensaje: val.mensaje || 'Token invalido o expirado.' });
         socket.disconnect(true);
         return;
     }
+    const ctx = val.data;
 
     socket.data.consola = ctx;
     console.log(`[consola] Autorizado socket=${socket.id} vps=${ctx.vps_id} usuario=${ctx.usuario_id}`);
@@ -349,4 +366,12 @@ io.on('connection', async (socket) => {
 server.listen(PUERTO, () => {
     console.log(`[consola] Servidor escuchando en http://127.0.0.1:${PUERTO}`);
     console.log(`[consola] Validando tokens contra: ${VALIDAR_URL}`);
+
+    // Al arrancar, este proceso no tiene ninguna consola SSH viva: cualquier
+    // sesion 'activa' en BD es huerfana de una ejecucion anterior. Se cierran.
+    phpPost(HUERFANAS_URL, {}).then((data) => {
+        if (data && data.cerradas > 0) {
+            console.log(`[consola] Sesiones huerfanas cerradas al arrancar: ${data.cerradas}`);
+        }
+    });
 });

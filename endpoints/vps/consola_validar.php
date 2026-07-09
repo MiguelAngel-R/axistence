@@ -21,6 +21,7 @@ require_once __DIR__ . '/../config/bootstrap.php';
 require_once __DIR__ . '/../helpers/consola_tokens.php';
 
 solo_metodo('POST');
+consola_requiere_node_key();
 
 $in    = body_json();
 $token = trim((string)($in['token'] ?? ''));

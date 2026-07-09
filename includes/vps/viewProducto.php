@@ -153,6 +153,10 @@ $tabs = [
                                         <option value="">— Sin credenciales —</option>
                                     </select>
                                 </label>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" id="consolaAddCred"
+                                        title="Agregar credencial SSH">
+                                    <i class="bi bi-plus-lg" aria-hidden="true"></i> Credencial
+                                </button>
                                 <button type="button" class="btn btn-primary btn-sm" id="consolaConectar">
                                     <i class="bi bi-plug" aria-hidden="true"></i> Conectar
                                 </button>
@@ -163,7 +167,18 @@ $tabs = [
                             </div>
 
                             <div class="consola__cuerpo">
-                                <div class="consola__term" id="consolaTerminal"></div>
+                                <div class="consola__principal">
+                                    <div class="consola__term" id="consolaTerminal"></div>
+                                    <!-- Autocompletar: sugerencias del historial de este
+                                         VPS mientras se escribe. Tab (o clic) completa. -->
+                                    <div class="consola__sugerencias" id="consolaSugerencias" hidden>
+                                        <div class="consola__sug-titulo">
+                                            <span><i class="bi bi-lightbulb" aria-hidden="true"></i> Sugerencias del historial</span>
+                                            <span><kbd>Tab</kbd> completa · <kbd>↑</kbd><kbd>↓</kbd> elige</span>
+                                        </div>
+                                        <ul class="consola__sug-lista" id="consolaSugLista"></ul>
+                                    </div>
+                                </div>
                                 <aside class="consola__lateral">
                                     <div class="consola__lateral-head">
                                         <span><i class="bi bi-clock-history" aria-hidden="true"></i> Historial</span>
@@ -552,6 +567,75 @@ $tabs = [
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
                 <button type="button" class="btn btn-primary btn-sm" id="btnGuardarAddSsl"><i class="bi bi-check-lg"></i> Guardar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Agregar credencial SSH (para la consola). El secreto se cifra en el
+     backend (consola_credenciales.php); aqui nunca se muestra el guardado. -->
+<div class="modal fade" id="modalAddCredencial" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title h6">Agregar credencial SSH</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <div id="formAddCredError" class="alert alert-danger d-none" role="alert"></div>
+                <form id="formAddCred" novalidate autocomplete="off">
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <label class="form-label" for="acEtiqueta">Etiqueta</label>
+                            <input class="form-control" type="text" id="acEtiqueta" maxlength="120"
+                                   placeholder="Ej: root produccion">
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label" for="acHost">Host / IP *</label>
+                            <input class="form-control" type="text" id="acHost" maxlength="255" placeholder="1.2.3.4 o servidor.com" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label" for="acPuerto">Puerto *</label>
+                            <input class="form-control" type="number" id="acPuerto" min="1" max="65535" value="22" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="acUsuario">Usuario *</label>
+                            <input class="form-control" type="text" id="acUsuario" maxlength="100" placeholder="root, ubuntu…" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="acTipoAuth">Tipo de autenticación *</label>
+                            <select class="form-select" id="acTipoAuth">
+                                <option value="password">Contraseña</option>
+                                <option value="clave_privada">Clave privada</option>
+                            </select>
+                        </div>
+
+                        <!-- Autenticación por contraseña -->
+                        <div class="col-12" data-rol="campo-password">
+                            <label class="form-label" for="acPassword">Contraseña *</label>
+                            <input class="form-control" type="password" id="acPassword" autocomplete="new-password">
+                        </div>
+
+                        <!-- Autenticación por clave privada -->
+                        <div class="col-12 d-none" data-rol="campo-clave">
+                            <label class="form-label" for="acClave">Clave privada *</label>
+                            <textarea class="form-control consola__clave" id="acClave" rows="6"
+                                      placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;…&#10;-----END OPENSSH PRIVATE KEY-----"></textarea>
+                        </div>
+                        <div class="col-12 d-none" data-rol="campo-clave">
+                            <label class="form-label" for="acPassphrase">Passphrase de la clave (opcional)</label>
+                            <input class="form-control" type="password" id="acPassphrase" autocomplete="new-password">
+                        </div>
+                    </div>
+                    <div class="form-text mt-2">
+                        <i class="bi bi-shield-lock" aria-hidden="true"></i>
+                        El secreto se guarda cifrado (AES-256-GCM); nunca se almacena en texto plano.
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary btn-sm" id="btnGuardarAddCred"><i class="bi bi-check-lg"></i> Guardar</button>
             </div>
         </div>
     </div>

@@ -17,6 +17,7 @@ require_once __DIR__ . '/../config/bootstrap.php';
 require_once __DIR__ . '/../helpers/consola_tokens.php';
 
 solo_metodo('POST');
+consola_requiere_node_key();
 
 const UUID_RE = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i';
 

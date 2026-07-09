@@ -7,19 +7,23 @@ declare(strict_types=1);
 //  Lo llama Node al terminar la sesion SSH (cierre normal, timeout o
 //  error). Marca la fila de vps_consola_sesiones con estado final y fin.
 //
-//  POST { token, sesion_id, estado? }   estado: 'cerrada' (def) | 'error'
-//  200 -> { ok } ; 401 token ; 404 sesion ; 403 ajena ; 422 datos
+//  Autenticacion: clave compartida Node<->PHP (X-Consola-Node-Key), NO el
+//  token (que ya pudo expirar en una sesion larga). El sesion_id (UUID
+//  generado por PHP) identifica la sesion a cerrar.
+//
+//  POST { sesion_id, estado? }   estado: 'cerrada' (def) | 'error'
+//  200 -> { ok } ; 403 node key ; 404 sesion ; 422 datos
 // =====================================================================
 
 require_once __DIR__ . '/../config/bootstrap.php';
 require_once __DIR__ . '/../helpers/consola_tokens.php';
 
 solo_metodo('POST');
+consola_requiere_node_key();
 
 const UUID_RE = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i';
 
-[$payload, $in] = consola_token_de_body();
-
+$in       = body_json();
 $sesionId = trim((string)($in['sesion_id'] ?? ''));
 $estado   = (string)($in['estado'] ?? 'cerrada');
 
@@ -38,9 +42,6 @@ $sesion = $stmt->fetch();
 
 if (!$sesion) {
     json_error('Sesion de consola no encontrada', 404);
-}
-if ((string)$sesion['vps_id'] !== (string)($payload['vps_id'] ?? '')) {
-    json_error('La sesion no corresponde al VPS autorizado', 403);
 }
 
 // Solo cerrar si sigue activa (idempotente: si ya estaba cerrada, no falla).

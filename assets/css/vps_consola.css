@@ -8,6 +8,11 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
+    /* El contenedor de pestañas (.detalle-tabs__content) se sale 24px a cada
+       lado (margin negativo) para que las TABLAS ocupen todo el ancho. La
+       consola no es una tabla, así que reinserta esos 24px para alinearse con
+       la línea divisoria de las pestañas (igual que la pestaña Información). */
+    padding: 0 var(--space-5) var(--space-5);
 }
 
 /* --- Barra superior: credencial + acciones + estado ----------------- */
@@ -69,6 +74,13 @@
     min-height: 420px;
 }
 
+/* Columna izquierda: terminal + panel de sugerencias apilados. */
+.consola__principal {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
 .consola__term {
     height: 460px;
     background: #0f172a;             /* slate 900: fondo de la terminal */
@@ -82,6 +94,79 @@
 .consola__term .xterm-screen { height: 100% !important; }
 .consola__term .xterm-viewport::-webkit-scrollbar { width: 10px; }
 .consola__term .xterm-viewport::-webkit-scrollbar-thumb { background: #334155; }
+
+/* --- Autocompletar: panel de sugerencias bajo la terminal ----------- */
+.consola__sugerencias {
+    display: flex;
+    flex-direction: column;
+    max-height: 200px;
+    background: #0f172a;             /* mismo fondo: se ve pegado a la terminal */
+    border: 1px solid var(--c-brand);
+    border-top: none;
+    color: #e2e8f0;
+}
+.consola__sugerencias[hidden] { display: none; }   /* gana al display:flex */
+
+.consola__sug-titulo {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--space-2);
+    padding: 5px 10px;
+    font-size: .68rem;
+    letter-spacing: .03em;
+    text-transform: uppercase;
+    color: #94a3b8;
+    background: #111c31;
+    border-bottom: 1px solid #1e293b;
+}
+.consola__sug-titulo kbd {
+    font-family: "Cascadia Code", "Consolas", monospace;
+    font-size: .68rem;
+    padding: 0 4px;
+    margin: 0 1px;
+    color: #cbd5e1;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 0;
+}
+
+.consola__sug-lista {
+    list-style: none;
+    margin: 0;
+    padding: 4px 0;
+    overflow-y: auto;
+    font-family: "Cascadia Code", "Consolas", "Courier New", monospace;
+    font-size: .82rem;
+}
+.consola__sug-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 10px;
+    cursor: pointer;
+    color: #cbd5e1;
+}
+.consola__sug-item:hover     { background: #1e293b; }
+.consola__sug-item.is-active { background: var(--c-brand); color: #fff; }
+/* El comando va en un solo bloque (sin gap interno); aquí se trunca si es largo. */
+.consola__sug-cmd {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+/* La parte ya escrita se resalta; el resto es lo que Tab completaria. */
+.consola__sug-item .match             { color: #7dd3fc; font-weight: 600; }
+.consola__sug-item.is-active .match   { color: #fff; }
+.consola__sug-veces {
+    margin-left: auto;
+    font-size: .7rem;
+    color: #64748b;
+}
+.consola__sug-item.is-active .consola__sug-veces { color: #dbeafe; }
+.consola__sug-lista::-webkit-scrollbar { width: 10px; }
+.consola__sug-lista::-webkit-scrollbar-thumb { background: #334155; }
 
 /* --- Panel lateral: historial -------------------------------------- */
 .consola__lateral {
@@ -157,6 +242,14 @@
     font-size: .8rem;
     color: var(--c-text-muted);
     text-align: center;
+}
+
+/* --- Modal "Agregar credencial": clave privada monoespaciada -------- */
+.consola__clave {
+    font-family: "Cascadia Code", "Consolas", "Courier New", monospace;
+    font-size: .8rem;
+    white-space: pre;
+    overflow-wrap: normal;
 }
 
 /* --- Responsivo: el lateral baja bajo la terminal ------------------ */
