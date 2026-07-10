@@ -28,6 +28,9 @@ $(function () {
     var dropFechas = null;   // controlador del dropdown de fechas (general.js)
     var modalCliente = AX.modal("#modalCliente");
     var modalProyectoCli = AX.modal("#modalProyectoCliente");
+    var modalContacto = AX.modal("#modalContacto");
+    var modoContacto = "crear";     // "crear" | "editar" (mismo modal para ambos)
+    var contactoEditandoId = null;  // id del contacto en edicion (null en alta)
     var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     function filaVacia(mensaje) {
@@ -355,23 +358,28 @@ $(function () {
         $('#detTabs [data-bs-toggle="tab"]').on("shown.bs.tab", aplicarFiltrosDetalle);
     }
 
+    // Pide el detalle del cliente activo (detalleId) y lo entrega a onOk. Se usa
+    // tanto para la apertura como para refrescar tras un alta (p. ej. contacto).
+    function solicitarDetalle(onOk) {
+        $.ajax({
+            url: "endpoints/clientes/ver.php", method: "GET", dataType: "json",
+            xhrFields: { withCredentials: true }, data: { id: detalleId }
+        }).done(function (res) {
+            if (res && res.ok) { onOk(res.data); }
+            else { AX.error((res && res.mensaje) || "No se pudo cargar el detalle del cliente."); volverAlListado(); }
+        }).fail(function (xhr) {
+            AX.error((xhr.responseJSON && xhr.responseJSON.mensaje) || "No se pudo cargar el detalle del cliente.");
+            volverAlListado();
+        });
+    }
+
     function abrirDetalle(id) {
         detalleId = id;
         mostrar($vistaDetalle);
         reiniciarFiltrosDetalle();
         AX.limpiarFooter(); // sin footer en el detalle; la flecha "Volver" retorna
         window.scrollTo({ top: 0, behavior: "smooth" });
-
-        $.ajax({
-            url: "endpoints/clientes/ver.php", method: "GET", dataType: "json",
-            xhrFields: { withCredentials: true }, data: { id: id }
-        }).done(function (res) {
-            if (res && res.ok) { pintarDetalle(res.data); }
-            else { AX.error((res && res.mensaje) || "No se pudo cargar el detalle del cliente."); volverAlListado(); }
-        }).fail(function (xhr) {
-            AX.error((xhr.responseJSON && xhr.responseJSON.mensaje) || "No se pudo cargar el detalle del cliente.");
-            volverAlListado();
-        });
+        solicitarDetalle(pintarDetalle);
     }
 
     // Resumen breve de recursos de un proyecto (columna "Recursos").
@@ -468,14 +476,19 @@ $(function () {
                 "<td>" + (p.fecha_inicio ? AX.formatearFecha(p.fecha_inicio) : "—") + "</td></tr>";
         });
 
-        // Personas de contacto.
-        pintarSeccion($("#detContactos"), d.contactos, 5, function (x) {
+        // Personas de contacto. Cada fila embebe sus datos (data-registro) para
+        // que "Actualizar" pueble el formulario sin volver a consultar la BD.
+        pintarSeccion($("#detContactos"), d.contactos, 6, function (x) {
             var principal = x.es_contacto_principal ? '<i class="bi bi-star-fill"></i> Sí' : "No";
-            return "<tr><td>" + AX.escaparHtml(x.nombre_completo) + "</td>" +
+            return '<tr data-registro="' + AX.escaparHtml(JSON.stringify(x)) + '">' +
+                "<td>" + AX.escaparHtml(x.nombre_completo) + "</td>" +
                 "<td>" + AX.escaparHtml(x.cargo_puesto || "—") + "</td>" +
                 "<td>" + AX.escaparHtml(x.email || "—") + "</td>" +
                 "<td>" + AX.escaparHtml(x.telefono_movil || x.telefono_fijo || "—") + "</td>" +
-                "<td>" + principal + "</td></tr>";
+                "<td>" + principal + "</td>" +
+                '<td class="tabla-acciones">' +
+                    '<button type="button" class="btn-icono" data-accion="editar-contacto" title="Actualizar"><i class="bi bi-pencil"></i></button>' +
+                "</td></tr>";
         });
 
         // Notas (con autor).
@@ -506,6 +519,99 @@ $(function () {
         detalleId = null;
         cargar(); // recarga la lista y restaura el paginador en el footer
     }
+
+    // =================================================================
+    //  Alta de persona de contacto (pestaña Contactos del detalle)
+    // =================================================================
+
+    // contacto: objeto de la fila cuando es edicion; null/undefined cuando es alta.
+    // El mismo modal sirve para ambos; en edicion se puebla desde la fila.
+    function abrirModalContacto(contacto) {
+        if (!detalleId) { return; } // solo con un detalle abierto
+        modoContacto = contacto ? "editar" : "crear";
+        contactoEditandoId = contacto ? contacto.id : null;
+        var esEditar = (modoContacto === "editar");
+
+        AX.limpiarFormulario("#formContacto", "#formContactoError");
+        $("#btnGuardarContacto").prop("disabled", false)
+            .find("[data-rol='texto']").text(esEditar ? "Guardar cambios" : "Agregar");
+        $("#formContactoTitulo").text(esEditar ? "Editar contacto" : "Nuevo contacto");
+
+        // En edicion se pueblan los campos por atributo name (incluye el check
+        // "es_contacto_principal"). Reutiliza el helper generico de general.js.
+        if (esEditar) { AX.poblarFormulario("#formContacto", contacto); }
+
+        modalContacto.abrir();
+        $("#fkNombres").trigger("focus");
+    }
+
+    function enviarContacto() {
+        var lectura   = AX.leerFormulario("#formContacto");
+        var nombres   = $.trim(lectura.nombres || "");
+        var apellidos = $.trim(lectura.apellidos || "");
+        var email     = $.trim(lectura.email || "");
+
+        if (!nombres || !apellidos) { return AX.errorFormulario("#formContactoError", "El nombre y el apellido del contacto son obligatorios."); }
+        if (!email)  { return AX.errorFormulario("#formContactoError", "El correo del contacto es obligatorio."); }
+        if (!EMAIL_RE.test(email)) { return AX.errorFormulario("#formContactoError", "El correo no tiene un formato valido."); }
+
+        // El mismo modal sirve para alta y edicion: el modo decide el endpoint,
+        // el identificador que se envia y los mensajes de exito/error.
+        var esEditar = (modoContacto === "editar");
+
+        var datos = {
+            nombres:               nombres,
+            apellidos:             apellidos,
+            cargo_puesto:          $.trim(lectura.cargo_puesto || ""),
+            email:                 email,
+            telefono_movil:        $.trim(lectura.telefono_movil || ""),
+            telefono_fijo:         $.trim(lectura.telefono_fijo || ""),
+            es_contacto_principal: !!lectura.es_contacto_principal
+        };
+        if (esEditar) { datos.contacto_id = contactoEditandoId; }
+        else          { datos.cliente_id  = detalleId; }
+
+        var url       = esEditar ? "endpoints/clientes/contacto_actualizar.php"
+                                 : "endpoints/clientes/contacto_crear.php";
+        var msgExito  = esEditar ? "El contacto se actualizó correctamente."
+                                 : "El contacto se agregó correctamente.";
+        var msgError  = esEditar ? "No se pudo actualizar el contacto."
+                                 : "No se pudo agregar el contacto.";
+
+        var $btn = $("#btnGuardarContacto").prop("disabled", true);
+        $.ajax({
+            url: url,
+            method: "POST",
+            contentType: "application/json",
+            dataType: "json",
+            xhrFields: { withCredentials: true },
+            data: JSON.stringify(datos)
+        }).done(function (res) {
+            if (res && res.ok) {
+                modalContacto.cerrar();
+                solicitarDetalle(pintarDetalle); // refresca la tabla sin salir de la pestaña
+                AX.exito(msgExito);
+            } else {
+                AX.errorFormulario("#formContactoError", (res && res.mensaje) || msgError);
+                $btn.prop("disabled", false);
+            }
+        }).fail(function (xhr) {
+            AX.errorFormulario("#formContactoError", (xhr.responseJSON && xhr.responseJSON.mensaje) || msgError);
+            $btn.prop("disabled", false);
+        });
+    }
+
+    // El botón vive dentro del detalle (estático en el DOM); enlace directo.
+    $("#btnNuevoContacto").on("click", function () { abrirModalContacto(null); });
+    $("#btnGuardarContacto").on("click", enviarContacto);
+
+    // Clic en "Actualizar" de una fila de Contactos -> puebla el formulario con
+    // los datos embebidos en la fila (sin consultar la BD) y abre el modal.
+    $(document).on("click", '#detContactos [data-accion="editar-contacto"]', function () {
+        var contacto = AX.datosFila(this);
+        if (contacto) { abrirModalContacto(contacto); }
+        else { AX.toast("No se pudieron leer los datos del contacto.", "error"); }
+    });
 
     // Clic en una fila de la pestaña Proyectos -> modal con la info del proyecto.
     $(document).on("click", "#detProyectos tr.fila-proyecto", function (e) {

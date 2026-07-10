@@ -58,3 +58,9 @@
 .mpc-vacio { color: var(--c-text-faint); font-style: italic; }
 .mpc-rol { color: var(--c-text-muted); font-size: 12.5px; }
 .mpc-nota-fecha { color: var(--c-text-faint); font-size: 12px; margin-right: 4px; }
+
+/* Barra de acciones dentro de una pestaña del detalle (p. ej. "Agregar contacto") */
+.detalle-tab-acciones {
+    display: flex; justify-content: flex-end;
+    margin-bottom: 12px;
+}
