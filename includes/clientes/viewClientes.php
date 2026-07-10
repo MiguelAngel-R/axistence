@@ -17,7 +17,7 @@
 $tabs = [
     ['id' => 'informacion', 'label' => 'Información', 'icon' => 'bi-info-circle'],
     ['id' => 'proyectos',   'label' => 'Proyectos',   'icon' => 'bi-kanban',        'tbody' => 'detProyectos', 'cols' => ['Proyecto', 'Estado', 'Servidor / VPS', 'Recursos', 'Inicio']],
-    ['id' => 'contactos',   'label' => 'Contactos',    'icon' => 'bi-person-lines-fill', 'tbody' => 'detContactos', 'cols' => ['Nombre', 'Cargo', 'Correo', 'Teléfono', 'Principal']],
+    ['id' => 'contactos',   'label' => 'Contactos',    'icon' => 'bi-person-lines-fill', 'tbody' => 'detContactos', 'cols' => ['Nombre', 'Cargo', 'Correo', 'Teléfono', 'Principal', 'Acciones']],
     ['id' => 'notas',       'label' => 'Notas',        'icon' => 'bi-journal-text',  'tbody' => 'detNotas',     'cols' => ['Fecha', 'Autor', 'Nota']],
     ['id' => 'historial',   'label' => 'Historial',    'icon' => 'bi-clock-history', 'tbody' => 'detLogs',      'cols' => ['Fecha', 'Usuario', 'Acción', 'Módulo', 'Detalle']],
 ];
@@ -125,6 +125,14 @@ $tabs = [
                         </dl>
 
                     <?php else: ?>
+                        <?php if ($t['id'] === 'contactos'): ?>
+                            <!-- Acciones de la pestaña Contactos: alta de contacto -->
+                            <div class="detalle-tab-acciones">
+                                <button type="button" class="btn btn-primary btn-sm" id="btnNuevoContacto">
+                                    <i class="bi bi-plus-lg" aria-hidden="true"></i> Agregar contacto
+                                </button>
+                            </div>
+                        <?php endif; ?>
                         <div class="tabla-wrap">
                             <table class="table tabla">
                                 <thead>
@@ -143,6 +151,72 @@ $tabs = [
             <?php endforeach; ?>
         </div>
 
+    </div>
+</div>
+
+<!-- Modal de alta de persona de contacto del cliente.
+     Va FUERA de #vistaDetalle para no heredar su d-none. -->
+<div class="modal fade" id="modalContacto" tabindex="-1" aria-hidden="true" aria-labelledby="formContactoTitulo">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title h5" id="formContactoTitulo">Nuevo contacto</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <div id="formContactoError" class="alert alert-danger d-none" role="alert"></div>
+
+                <form id="formContacto" novalidate autocomplete="off">
+                    <div class="row g-4">
+                        <div class="col-md-6">
+                            <label class="form-label" for="fkNombres">Nombres *</label>
+                            <input class="form-control" type="text" id="fkNombres" name="nombres" maxlength="100" required>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label" for="fkApellidos">Apellidos *</label>
+                            <input class="form-control" type="text" id="fkApellidos" name="apellidos" maxlength="100" required>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label" for="fkCargo">Cargo / puesto</label>
+                            <input class="form-control" type="text" id="fkCargo" name="cargo_puesto" maxlength="100">
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label" for="fkEmail">Correo *</label>
+                            <input class="form-control" type="email" id="fkEmail" name="email" maxlength="100"
+                                   placeholder="contacto@cliente.com" required>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label" for="fkMovil">Teléfono móvil</label>
+                            <input class="form-control" type="text" id="fkMovil" name="telefono_movil" maxlength="50">
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label" for="fkFijo">Teléfono fijo</label>
+                            <input class="form-control" type="text" id="fkFijo" name="telefono_fijo" maxlength="50">
+                        </div>
+
+                        <div class="col-12">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="fkPrincipal" name="es_contacto_principal" value="1">
+                                <label class="form-check-label" for="fkPrincipal">
+                                    Marcar como contacto principal
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary btn-sm" id="btnGuardarContacto">
+                    <i class="bi bi-check-lg" aria-hidden="true"></i> <span data-rol="texto">Agregar</span>
+                </button>
+            </div>
+        </div>
     </div>
 </div>
 
