@@ -6,7 +6,8 @@
    filtros. El tablero Kanban se implementara despues.
    Espejo de assets/js/hosting.js.
 
-   NOTA: la accion "Eliminar" queda solo maquetada; no se implementa borrado.
+   NOTA: la accion "Eliminar" ejecuta un borrado real (confirmacion + endpoint
+   eliminar.php + auditoria ELIMINAR).
    ===================================================================== */
 
 $(function () {
@@ -1173,6 +1174,23 @@ $(function () {
         cambiarResponsable($(this).attr("data-usuario-id"), "quitar");
     });
 
+    // Eliminacion real del proyecto: confirma (advirtiendo del borrado de su
+    // tablero, tareas y recursos asociados) y recarga.
+    function eliminarRegistro(reg) {
+        AX.confirmar({
+            titulo: "Eliminar proyecto",
+            texto: 'Se eliminará "' + (reg.nombre_proyecto || "este proyecto") +
+                   '" junto con su tablero, tareas, equipo, hitos y notas. Esta acción no se puede deshacer.',
+            confirmar: "Eliminar", peligro: true
+        }).then(function (r) {
+            if (!r.isConfirmed) { return; }
+            AX.enviarJSON("endpoints/proyectos/eliminar.php", { id: reg.id }).then(function (res) {
+                if (res.ok) { AX.exito(res.mensaje || "Proyecto eliminado."); cargar(); }
+                else { AX.error(res.mensaje || "No se pudo eliminar el proyecto."); }
+            }).catch(function () { AX.error("No se pudo eliminar el proyecto."); });
+        });
+    }
+
     $tbody.on("click", "tr", function (e) {
         if (AX.esClicEnEnlace(e)) { return; }
         var $btn = $(e.target).closest("[data-accion]");
@@ -1183,7 +1201,10 @@ $(function () {
             else if (accion === "editar") {
                 if (reg) { abrirFormulario("editar", reg); }
                 else { AX.toast("No se pudieron leer los datos de la fila.", "error"); }
-            } else { AX.toast("Eliminación de proyectos: disponible próximamente.", "info"); }
+            } else if (accion === "eliminar") {
+                if (reg) { eliminarRegistro(reg); }
+                else { AX.toast("No se pudieron leer los datos de la fila.", "error"); }
+            }
             return;
         }
         if (reg) { abrirDetalle(reg.id); }
