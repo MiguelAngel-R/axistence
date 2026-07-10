@@ -78,4 +78,28 @@ registrar_auditoria(
     ]
 );
 
+// --- Tiempo real ----------------------------------------------------
+// Avisa a los navegadores que tienen abierto el DETALLE de esta relacion de
+// correo para que agreguen la fila al tab "Extensiones" sin recargar. Se
+// reconsulta la extension recien creada con los MISMOS JOINs/campos que
+// endpoints/correo/ver.php (nombre/correo de la cuenta y tipo de licencia ya
+// resueltos), que no estan en las variables del endpoint. El evento viaja con
+// cuenta_correo_id (la relacion) para que cada navegador sepa si le corresponde.
+// Se emite SOLO tras la insercion y la auditoria (fire-and-forget).
+$stmt = $pdo->prepare(
+    'SELECT e.id, e.gigas_adicionales, e.fecha_adquisicion,
+            cu.nombre AS cuenta_nombre, cu.apellidos AS cuenta_apellidos,
+            cu.correo AS cuenta_correo, l.tipo_licencia
+       FROM public.correo_extensiones_espacio e
+       LEFT JOIN public.correo_licencia_cuentas cu ON cu.id = e.cuenta_id
+       LEFT JOIN public.correo_licencias l         ON l.id = cu.licencia_id
+      WHERE e.id = :id'
+);
+$stmt->execute([':id' => $ext['id']]);
+$extFila = $stmt->fetch();
+if ($extFila) {
+    $extFila['cuenta_correo_id'] = $cuenta['cuenta_correo_id'];
+    notificar_socket('correo', 'extension:creada', $extFila);
+}
+
 json_ok(['extension' => $ext], 'Extension de espacio asignada correctamente');

@@ -72,6 +72,41 @@ registrar_auditoria(
     ['archivada' => $archivar]
 );
 
+// --- Tiempo real ----------------------------------------------------
+// Avisa a los navegadores que tienen abierto el tablero de este proyecto para
+// que reflejen el cambio sin recargar: al archivar, quitan la tarjeta; al
+// restaurar, la reinsertan al final de su columna. Viajan proyecto_id (para
+// filtrar por detalle), tarea_id y el estado. Al RESTAURAR se reconsulta la
+// tarjeta con la misma forma que tablero.php (titulo/prioridad/responsables/
+// estado + columna destino), porque las demas sesiones no la tienen en su DOM.
+// Se emite SOLO tras el cambio y la auditoria (fire-and-forget).
+$payload = [
+    'proyecto_id' => $proyectoId,
+    'tarea_id'    => $tareaId,
+    'archivar'    => $archivar,
+];
+if (!$archivar) {
+    $stmt = $pdo->prepare(
+        "SELECT t.id, t.columna_id, t.titulo, t.descripcion, t.prioridad,
+                t.fecha_finalizacion_real,
+                COALESCE(
+                    string_agg(u.nombre_completo, ', ' ORDER BY u.nombre_completo),
+                    ''
+                ) AS responsables
+           FROM public.tareas_kanban t
+           LEFT JOIN public.tarea_responsables tr ON tr.tarea_id = t.id
+           LEFT JOIN public.usuarios_internos  u  ON u.id = tr.usuario_id
+          WHERE t.id = :t
+          GROUP BY t.id"
+    );
+    $stmt->execute([':t' => $tareaId]);
+    $tarjeta = $stmt->fetch();
+    if ($tarjeta) {
+        $payload['tarjeta'] = $tarjeta;
+    }
+}
+notificar_socket('proyectos', 'tarea:archivada', $payload);
+
 json_ok(
     ['archivada' => $archivar],
     $archivar ? 'Tarea archivada' : 'Tarea restaurada'

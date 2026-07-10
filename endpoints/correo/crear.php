@@ -16,6 +16,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../config/bootstrap.php';
 require_once __DIR__ . '/_mx.php';
 require_once __DIR__ . '/_licencias.php';
+require_once __DIR__ . '/_fila_socket.php';
 
 solo_metodo('POST');
 requiere_permiso('Correo', 'crear');
@@ -149,5 +150,16 @@ registrar_auditoria(
         'fecha_vencimiento'       => $fVen,
     ]
 );
+
+// --- Tiempo real ----------------------------------------------------
+// Se avisa a los navegadores que tienen el listado abierto para que inserten la
+// fila sin recargar. La fila se reconsulta con la MISMA forma que el listado
+// (helper compartido: resuelve nombres de dominio/cliente/servidor), asi el
+// navegador no reconsulta la BD. Se emite SOLO tras el commit y la auditoria
+// (fire-and-forget: nunca rompe la operacion).
+$filaCorreo = fila_correo_socket($pdo, (string)$id);
+if ($filaCorreo) {
+    notificar_socket('correo', 'correo:creado', $filaCorreo);
+}
 
 json_ok(['id' => $id], 'Relacion de correo creada correctamente');

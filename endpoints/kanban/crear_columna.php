@@ -53,9 +53,19 @@ registrar_auditoria(
     ['proyecto_id' => $proyectoId, 'nombre' => $nombre]
 );
 
-json_ok([
-    'id'     => $col['id'],
-    'nombre' => $nombre,
-    'orden'  => (int) $col['orden'],
-    'tareas' => [],
-], 'Columna creada correctamente');
+// --- Tiempo real ----------------------------------------------------
+// Avisa a los navegadores que tienen abierto el tablero de este proyecto para
+// que agreguen la columna al final sin recargar. El evento llega a la sala del
+// modulo; viaja con proyecto_id (para filtrar por detalle) y los datos de la
+// columna (recien creada: sin tareas). Se emite SOLO tras el commit y la
+// auditoria (fire-and-forget: nunca rompe la operacion).
+$columna = [
+    'id'          => $col['id'],
+    'proyecto_id' => $proyectoId,
+    'nombre'      => $nombre,
+    'orden'       => (int) $col['orden'],
+    'tareas'      => [],
+];
+notificar_socket('proyectos', 'columna:creada', $columna);
+
+json_ok($columna, 'Columna creada correctamente');

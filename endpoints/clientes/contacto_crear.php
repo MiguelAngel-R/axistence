@@ -128,4 +128,15 @@ registrar_auditoria(
     ]
 );
 
+// --- Tiempo real ----------------------------------------------------
+// Avisa a los navegadores que tienen abierto el DETALLE de este cliente para
+// que agreguen la fila del contacto sin recargar ni volver a consultar la BD.
+// El evento llega a toda la sala del modulo; viaja con el cliente_id para que
+// cada navegador decida si le corresponde, y con los datos de la fila. Se
+// emite SOLO tras el commit y la auditoria (fire-and-forget: nunca rompe la
+// operacion si el server de sockets no responde).
+notificar_socket('clientes', 'contacto:creado', array_merge($contacto, [
+    'cliente_id' => $clienteId,
+]));
+
 json_ok(['contacto' => $contacto], 'Contacto agregado correctamente');

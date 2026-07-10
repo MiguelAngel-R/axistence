@@ -59,9 +59,21 @@ registrar_auditoria(
     ['comentario' => $comentario]
 );
 
-json_ok([
+$comentario = [
     'id'         => $fila['id'],
     'comentario' => $fila['comentario'],
     'fecha'      => $fila['fecha'],
     'autor'      => $u['nombre_completo'] ?? null,
-], 'Comentario agregado');
+];
+
+// --- Tiempo real ----------------------------------------------------
+// Avisa a los navegadores que tienen abierto el DETALLE de esta MISMA tarjeta
+// (modal) para que agreguen el comentario sin recargar. Viajan proyecto_id (para
+// filtrar por detalle) y tarea_id (para saber si es la tarjeta abierta), ademas
+// del comentario. Se emite SOLO tras la insercion y la auditoria (fire-and-forget).
+notificar_socket('proyectos', 'comentario:creado', array_merge($comentario, [
+    'proyecto_id' => $proyectoId,
+    'tarea_id'    => $tareaId,
+]));
+
+json_ok($comentario, 'Comentario agregado');

@@ -160,4 +160,14 @@ registrar_auditoria(
     ]
 );
 
+// --- Tiempo real ----------------------------------------------------
+// Avisa a los navegadores que tienen abierto el DETALLE de este cliente para
+// que reemplacen la fila del contacto sin recargar ni volver a consultar la BD.
+// El cliente_id se lee del propio contacto en BD (no del que llama). El evento
+// viaja con los datos ya actualizados de la fila. Se emite SOLO tras el commit
+// y la auditoria (fire-and-forget: nunca rompe la operacion).
+notificar_socket('clientes', 'contacto:actualizado', array_merge($contacto, [
+    'cliente_id' => $clienteId,
+]));
+
 json_ok(['contacto' => $contacto], 'Contacto actualizado correctamente');

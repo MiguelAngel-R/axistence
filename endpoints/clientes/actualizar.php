@@ -31,7 +31,7 @@ $pdo = Database::get();
 $stmt = $pdo->prepare(
     'SELECT tipo_cliente, razon_social, nombres, apellidos, nombre_razon_social,
             tipo_identificacion, numero_identificacion, email_general,
-            telefono_principal, direccion, estado
+            telefono_principal, direccion, estado, created_at
        FROM public.clientes
       WHERE id = :id'
 );
@@ -81,5 +81,14 @@ registrar_auditoria(
     $actual,
     $datos
 );
+
+// --- Tiempo real ----------------------------------------------------
+// Se avisa a los navegadores para que reemplacen la fila sin recargar. El
+// created_at se conserva (viene de la fila existente) para pintar la columna
+// "Creado" sin volver a la BD.
+notificar_socket('clientes', 'cliente:actualizado', array_merge($datos, [
+    'id'         => $id,
+    'created_at' => $actual['created_at'],
+]));
 
 json_ok(['id' => $id], 'Cliente actualizado correctamente');
