@@ -6,8 +6,8 @@
    incluye la seleccion multiple de "tipos de producto" (M:N).
    Espejo de assets/js/clientes.js.
 
-   NOTA: la accion "Eliminar" queda solo maquetada (boton en la fila);
-   por regla de negocio de esta fase NO se implementa borrado.
+   NOTA: la accion "Eliminar" ejecuta un borrado real (confirmacion + endpoint
+   eliminar.php + auditoria ELIMINAR); 409 si tiene productos asociados.
    ===================================================================== */
 
 $(function () {
@@ -185,19 +185,33 @@ $(function () {
     // Boton Guardar del modal (Cancelar/cerrar los maneja data-bs-dismiss).
     $("#btnGuardarProveedor").on("click", enviarFormulario);
 
-    // Acciones de fila: editar reutiliza los datos ya cargados en la tabla.
-    // Eliminar queda solo maquetado en esta fase (sin logica de borrado).
+    // Eliminacion real del proveedor: confirma, llama al endpoint y recarga.
+    // El backend responde 409 si el proveedor tiene productos asociados.
+    function eliminarProveedor(proveedor) {
+        AX.confirmar({
+            titulo: "Eliminar proveedor",
+            texto: 'Se eliminará "' + (proveedor.nombre_proveedor || "este proveedor") +
+                   '" junto con sus contactos, cuentas de acceso y referencias. Esta acción no se puede deshacer.',
+            confirmar: "Eliminar", peligro: true
+        }).then(function (r) {
+            if (!r.isConfirmed) { return; }
+            AX.enviarJSON("endpoints/proveedores/eliminar.php", { id: proveedor.id }).then(function (res) {
+                if (res.ok) { AX.exito(res.mensaje || "Proveedor eliminado."); cargar(); }
+                else { AX.error(res.mensaje || "No se pudo eliminar el proveedor."); }
+            }).catch(function () { AX.error("No se pudo eliminar el proveedor."); });
+        });
+    }
+
+    // Acciones de fila: editar y eliminar reutilizan los datos de la tabla.
     $tbody.on("click", "[data-accion]", function () {
         var accion = $(this).data("accion");
+        var proveedor = AX.datosFila(this);
         if (accion === "editar") {
-            var proveedor = AX.datosFila(this);
-            if (proveedor) {
-                abrirModal("editar", proveedor);
-            } else {
-                AX.toast("No se pudieron leer los datos de la fila.", "error");
-            }
-        } else {
-            AX.toast("Eliminación de proveedores: disponible próximamente.", "info");
+            if (proveedor) { abrirModal("editar", proveedor); }
+            else { AX.toast("No se pudieron leer los datos de la fila.", "error"); }
+        } else if (accion === "eliminar") {
+            if (proveedor) { eliminarProveedor(proveedor); }
+            else { AX.toast("No se pudieron leer los datos de la fila.", "error"); }
         }
     });
 

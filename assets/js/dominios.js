@@ -737,6 +737,23 @@ $(function () {
     // La flecha "Volver" del detalle (data-ax-volver) regresa al listado.
     AX.vincularVolver(volverAlListado);
 
+    // Eliminacion real del dominio: confirma (advirtiendo del borrado en
+    // cascada de sus certificados SSL y relaciones de correo) y recarga.
+    function eliminarRegistro(reg) {
+        AX.confirmar({
+            titulo: "Eliminar dominio",
+            texto: 'Se eliminará "' + (reg.nombre_dominio || "este dominio") +
+                   '" junto con sus registros DNS, notas, certificados SSL y relaciones de correo. Esta acción no se puede deshacer.',
+            confirmar: "Eliminar", peligro: true
+        }).then(function (r) {
+            if (!r.isConfirmed) { return; }
+            AX.enviarJSON("endpoints/dominios/eliminar.php", { id: reg.id }).then(function (res) {
+                if (res.ok) { AX.exito(res.mensaje || "Dominio eliminado."); cargar(); }
+                else { AX.error(res.mensaje || "No se pudo eliminar el dominio."); }
+            }).catch(function () { AX.error("No se pudo eliminar el dominio."); });
+        });
+    }
+
     $tbody.on("click", "tr", function (e) {
         if (AX.esClicEnEnlace(e)) { return; }
         var $btn = $(e.target).closest("[data-accion]");
@@ -747,7 +764,10 @@ $(function () {
             else if (accion === "editar") {
                 if (reg) { abrirFormulario("editar", reg); }
                 else { AX.toast("No se pudieron leer los datos de la fila.", "error"); }
-            } else { AX.toast("Eliminación de dominios: disponible próximamente.", "info"); }
+            } else if (accion === "eliminar") {
+                if (reg) { eliminarRegistro(reg); }
+                else { AX.toast("No se pudieron leer los datos de la fila.", "error"); }
+            }
             return;
         }
         if (reg) { abrirDetalle(reg.id); }

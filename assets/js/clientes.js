@@ -10,8 +10,8 @@
      - Persona Natural  -> Nombres + Apellidos + Tipo de identificacion.
      - Persona Juridica -> Razon social + Tipo de identificacion fijo (NIT).
 
-   NOTA: la accion "Eliminar" queda solo maquetada (boton en la fila);
-   por regla de negocio de esta fase NO se implementa borrado.
+   NOTA: la accion "Eliminar" ejecuta un borrado real (confirmacion + endpoint
+   eliminar.php + auditoria ELIMINAR); el esquema borra en cascada.
    ===================================================================== */
 
 $(function () {
@@ -274,9 +274,25 @@ $(function () {
     // Boton Guardar del modal (Cancelar/cerrar los maneja data-bs-dismiss).
     $("#btnGuardarCliente").on("click", enviarFormulario);
 
+    // Eliminacion real del cliente: confirma (advirtiendo del borrado en
+    // cascada), llama al endpoint y recarga el listado.
+    function eliminarCliente(cliente) {
+        AX.confirmar({
+            titulo: "Eliminar cliente",
+            texto: 'Se eliminará "' + (cliente.nombre_razon_social || "este cliente") +
+                   '" junto con sus proyectos, productos asociados, contactos y notas. Esta acción no se puede deshacer.',
+            confirmar: "Eliminar", peligro: true
+        }).then(function (r) {
+            if (!r.isConfirmed) { return; }
+            AX.enviarJSON("endpoints/clientes/eliminar.php", { id: cliente.id }).then(function (res) {
+                if (res.ok) { AX.exito(res.mensaje || "Cliente eliminado."); cargar(); }
+                else { AX.error(res.mensaje || "No se pudo eliminar el cliente."); }
+            }).catch(function () { AX.error("No se pudo eliminar el cliente."); });
+        });
+    }
+
     // Clic en la tabla: los botones de accion mandan; el resto de la fila abre
-    // el detalle. Editar reutiliza los datos ya cargados en la fila; eliminar
-    // queda solo maquetado en esta fase (sin logica de borrado).
+    // el detalle. Editar y eliminar reutilizan los datos ya cargados en la fila.
     $tbody.on("click", "tr", function (e) {
         var $btn = $(e.target).closest("[data-accion]");
         var cliente = AX.datosFila(this);
@@ -287,8 +303,9 @@ $(function () {
             } else if (accion === "editar") {
                 if (cliente) { abrirModal("editar", cliente); }
                 else { AX.toast("No se pudieron leer los datos de la fila.", "error"); }
-            } else { // eliminar (solo maquetado)
-                AX.toast("Eliminación de clientes: disponible próximamente.", "info");
+            } else if (accion === "eliminar") {
+                if (cliente) { eliminarCliente(cliente); }
+                else { AX.toast("No se pudieron leer los datos de la fila.", "error"); }
             }
             return;
         }

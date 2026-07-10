@@ -4,7 +4,8 @@
    con selects de dominio, cliente y servidor (VPS), y vista de DETALLE
    (viewProducto) con pestañas + filtros. Espejo de assets/js/dominios.js.
 
-   NOTA: la accion "Eliminar" queda solo maquetada; no se implementa borrado.
+   NOTA: la accion "Eliminar" ejecuta un borrado real (confirmacion + endpoint
+   eliminar.php + auditoria ELIMINAR).
    ===================================================================== */
 
 $(function () {
@@ -703,6 +704,23 @@ $(function () {
     // La flecha "Volver" del detalle (data-ax-volver) regresa al listado.
     AX.vincularVolver(volverAlListado);
 
+    // Eliminacion real de la relacion de correo: confirma (advirtiendo del
+    // borrado de sus licencias/buzones) y recarga.
+    function eliminarRegistro(reg) {
+        AX.confirmar({
+            titulo: "Eliminar correo",
+            texto: 'Se eliminará la relación de correo del dominio "' + (reg.dominio || "seleccionado") +
+                   '" junto con sus licencias, buzones, extensiones y notas. Esta acción no se puede deshacer.',
+            confirmar: "Eliminar", peligro: true
+        }).then(function (r) {
+            if (!r.isConfirmed) { return; }
+            AX.enviarJSON("endpoints/correo/eliminar.php", { id: reg.id }).then(function (res) {
+                if (res.ok) { AX.exito(res.mensaje || "Correo eliminado."); cargar(); }
+                else { AX.error(res.mensaje || "No se pudo eliminar el correo."); }
+            }).catch(function () { AX.error("No se pudo eliminar el correo."); });
+        });
+    }
+
     $tbody.on("click", "tr", function (e) {
         if (AX.esClicEnEnlace(e)) { return; }
         var $btn = $(e.target).closest("[data-accion]");
@@ -713,7 +731,10 @@ $(function () {
             else if (accion === "editar") {
                 if (reg) { abrirFormulario("editar", reg); }
                 else { AX.toast("No se pudieron leer los datos de la fila.", "error"); }
-            } else { AX.toast("Eliminación de cuentas: disponible próximamente.", "info"); }
+            } else if (accion === "eliminar") {
+                if (reg) { eliminarRegistro(reg); }
+                else { AX.toast("No se pudieron leer los datos de la fila.", "error"); }
+            }
             return;
         }
         if (reg) { abrirDetalle(reg.id); }
