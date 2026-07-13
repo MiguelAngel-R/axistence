@@ -14,6 +14,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config/bootstrap.php';
 require_once __DIR__ . '/_administracion.php';
+require_once __DIR__ . '/_fila_socket.php';
 
 solo_metodo('POST');
 requiere_permiso('Dominios', 'crear');
@@ -169,5 +170,16 @@ registrar_auditoria(
         'cliente_id'        => $clienteIdBd,
     ]
 );
+
+// --- Tiempo real ----------------------------------------------------
+// Se avisa a los navegadores que tienen el listado abierto para que inserten
+// la fila sin recargar. La fila se reconsulta con la MISMA forma que el listado
+// (helper compartido: resuelve nombres de proveedor/VPS y clientes N:N), asi el
+// navegador no reconsulta la BD. Se emite SOLO tras el commit y la auditoria
+// (fire-and-forget: nunca rompe la operacion).
+$filaDom = fila_dominio_socket($pdo, $id);
+if ($filaDom) {
+    notificar_socket('dominios', 'dominio:creado', $filaDom);
+}
 
 json_ok(['id' => $id], 'Dominio creado correctamente');

@@ -14,6 +14,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../config/bootstrap.php';
 require_once __DIR__ . '/_mx.php';
 require_once __DIR__ . '/_licencias.php';
+require_once __DIR__ . '/_fila_socket.php';
 
 solo_metodo('POST');
 requiere_permiso('Correo', 'editar');
@@ -180,5 +181,15 @@ registrar_auditoria(
         'fecha_vencimiento'      => $fVen,
     ]
 );
+
+// --- Tiempo real ----------------------------------------------------
+// Se avisa a los navegadores que tienen el listado abierto para que reemplacen
+// la fila sin recargar. Se reconsulta con la MISMA forma que el listado (helper
+// compartido: nombres de dominio/cliente/servidor ya resueltos), asi el
+// navegador no reconsulta la BD. Se emite SOLO tras el commit y la auditoria.
+$filaCorreo = fila_correo_socket($pdo, $id);
+if ($filaCorreo) {
+    notificar_socket('correo', 'correo:actualizado', $filaCorreo);
+}
 
 json_ok(['id' => $id], 'Relacion de correo actualizada correctamente');

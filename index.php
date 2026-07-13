@@ -63,6 +63,13 @@ if ($vista === 'proyectos') {
     $libsJs[] = 'https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.2/Sortable.min.js';
 }
 
+// Los listados con tiempo real usan Socket.IO (la tabla se actualiza sin
+// recargar cuando se crea/edita/elimina). Se agregan aqui a medida que cada
+// modulo estrena el tiempo real.
+if (in_array($vista, ['clientes', 'proveedores', 'dominios', 'ssl', 'correo', 'proyectos'], true)) {
+    $libsJs[] = 'https://cdn.jsdelivr.net/npm/socket.io-client@4.8.1/dist/socket.io.min.js';
+}
+
 // Proteccion: vista privada sin sesion -> al login.
 if (in_array($vista, $requiereAuth, true) && !$autenticado) {
     header('Location: index.php?vista=login');

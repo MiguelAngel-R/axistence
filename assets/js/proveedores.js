@@ -8,6 +8,12 @@
 
    NOTA: la accion "Eliminar" ejecuta un borrado real (confirmacion + endpoint
    eliminar.php + auditoria ELIMINAR); 409 si tiene productos asociados.
+
+   TIEMPO REAL (Socket.IO): el listado inserta en vivo la fila cuando se crea un
+   proveedor (por cualquier usuario, incluido uno mismo), sin recargar ni volver
+   a consultar la BD. La escritura sigue yendo por HTTP al endpoint; el server
+   de sockets (websockets/index2.js) solo REPARTE lo que PHP confirma. Si el
+   socket no esta activo, se recae en recargar el listado (respaldo).
    ===================================================================== */
 
 $(function () {
@@ -15,10 +21,12 @@ $(function () {
 
     var estado = { pagina: 1, porPagina: 30, buscar: "" };
     var $tbody = $("#tbodyProveedores");
+    var $vistaListado = $("#vistaListado");
     var COLUMNAS = 5;
     var modo = "crear";      // "crear" | "editar"
     var editandoId = null;   // id del proveedor en edicion
     var modalProveedor = AX.modal("#modalProveedor");
+    var socketActivo = false;   // true cuando el socket de tiempo real esta conectado
 
     function filaVacia(mensaje) {
         return '<tr><td colspan="' + COLUMNAS + '" class="tabla-vacia">' +
@@ -167,7 +175,10 @@ $(function () {
         }).done(function (res) {
             if (res && res.ok) {
                 modalProveedor.cerrar();
-                cargar(); // recarga la lista
+                // Tanto el alta como la edicion aparecen en vivo por socket (el
+                // propio actor recibe el evento); solo se recarga como respaldo
+                // si el socket no esta activo.
+                if (!socketActivo) { cargar(); }
                 AX.exito(esEditar ? "El proveedor se actualizó correctamente." : "El proveedor se creó correctamente.");
             } else {
                 errorFormulario((res && res.mensaje) || "No se pudo guardar el proveedor.");
@@ -196,10 +207,89 @@ $(function () {
         }).then(function (r) {
             if (!r.isConfirmed) { return; }
             AX.enviarJSON("endpoints/proveedores/eliminar.php", { id: proveedor.id }).then(function (res) {
-                if (res.ok) { AX.exito(res.mensaje || "Proveedor eliminado."); cargar(); }
+                if (res.ok) {
+                    AX.exito(res.mensaje || "Proveedor eliminado.");
+                    // La fila se quita en vivo por socket; recarga de respaldo si no hay socket.
+                    if (!socketActivo) { cargar(); }
+                }
                 else { AX.error(res.mensaje || "No se pudo eliminar el proveedor."); }
             }).catch(function () { AX.error("No se pudo eliminar el proveedor."); });
         });
+    }
+
+    // =================================================================
+    //  Tiempo real (Socket.IO)
+    //  El listado inserta en vivo la fila cuando se crea un proveedor (por
+    //  cualquier usuario, incluido uno mismo), sin recargar ni volver a
+    //  consultar la BD: el evento ya trae los datos de la fila. La escritura
+    //  sigue yendo por HTTP al endpoint; el socket solo REPARTE lo confirmado.
+    // =================================================================
+
+    // Localiza la fila del listado cuyo registro embebido tiene ese id.
+    function filaPorId(id) {
+        return $tbody.find("tr").filter(function () {
+            var d = AX.datosFila(this);
+            return d && d.id === id;
+        });
+    }
+
+    // Alta: inserta la fila en su posicion alfabetica (el listado va ordenado
+    // por nombre). Solo aplica en la primera pagina y sin busqueda activa; en
+    // otro caso la fila aparecera de forma natural al navegar/filtrar.
+    function socketProveedorCreado(proveedor) {
+        if (!proveedor || !proveedor.id) { return; }
+        if (estado.pagina !== 1 || estado.buscar !== "") { return; }
+        if (filaPorId(proveedor.id).length) { return; }      // evita duplicar
+        $tbody.find(".tabla-vacia").closest("tr").remove();  // quita el placeholder "vacio"
+        var $nueva = $(fila(proveedor));
+        var nombre = proveedor.nombre_proveedor || "";
+        var insertado = false;
+        $tbody.find("tr").each(function () {
+            var d = AX.datosFila(this);
+            if (d && nombre.localeCompare(d.nombre_proveedor || "", "es", { sensitivity: "base" }) < 0) {
+                $nueva.insertBefore(this);
+                insertado = true;
+                return false;
+            }
+        });
+        if (!insertado) { $tbody.append($nueva); }
+    }
+
+    // Edicion: reemplaza la fila si esta en pantalla, fusionando sobre los datos
+    // previos (conserva lo que el evento no traiga, p. ej. created_at).
+    function socketProveedorActualizado(proveedor) {
+        if (!proveedor || !proveedor.id) { return; }
+        var $fila = filaPorId(proveedor.id);
+        if (!$fila.length) { return; }
+        var previo = AX.datosFila($fila[0]) || {};
+        $fila.replaceWith(fila($.extend({}, previo, proveedor)));
+    }
+
+    // Borrado: quita la fila; si la tabla queda vacia, muestra el placeholder.
+    function socketProveedorEliminado(payload) {
+        var id = payload && payload.id;
+        if (!id) { return; }
+        var $fila = filaPorId(id);
+        if (!$fila.length) { return; }
+        $fila.remove();
+        if (!$tbody.children().length) {
+            $tbody.html(filaVacia("No hay proveedores registrados."));
+        }
+    }
+
+    function conectarSocketProveedores() {
+        var url = $vistaListado.data("ws");
+        // Sin URL o sin la libreria cargada: la app sigue funcionando (con recarga).
+        if (!url || typeof io === "undefined") { return; }
+        var socket = io(url, { transports: ["websocket", "polling"], withCredentials: true });
+        socket.on("connect", function () {
+            socketActivo = true;
+            socket.emit("unirse", "proveedores"); // entra a la sala del modulo
+        });
+        socket.on("disconnect", function () { socketActivo = false; });
+        socket.on("proveedor:creado", socketProveedorCreado);
+        socket.on("proveedor:actualizado", socketProveedorActualizado);
+        socket.on("proveedor:eliminado", socketProveedorEliminado);
     }
 
     // Acciones de fila: editar y eliminar reutilizan los datos de la tabla.
@@ -216,4 +306,5 @@ $(function () {
     });
 
     cargar();
+    conectarSocketProveedores(); // tiempo real: escucha altas
 });

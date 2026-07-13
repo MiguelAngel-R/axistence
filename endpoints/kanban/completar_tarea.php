@@ -51,6 +51,18 @@ registrar_auditoria(
     ['completada' => $completada]
 );
 
+// --- Tiempo real ----------------------------------------------------
+// Avisa a los navegadores que tienen abierto el tablero de este proyecto para
+// que marquen/desmarquen la tarjeta como completada sin recargar. Viajan
+// proyecto_id (para filtrar por detalle), tarea_id y el nuevo estado. Es
+// idempotente: aplicar el mismo estado deja la misma tarjeta. Se emite SOLO tras
+// la actualizacion y la auditoria (fire-and-forget: nunca rompe la operacion).
+notificar_socket('proyectos', 'tarea:completada', [
+    'proyecto_id' => $proyectoId,
+    'tarea_id'    => $tareaId,
+    'completada'  => $completada,
+]);
+
 json_ok([
     'completada'              => $completada,
     'fecha_finalizacion_real' => $fecha !== false ? $fecha : null,

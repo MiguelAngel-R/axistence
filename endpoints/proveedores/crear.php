@@ -66,10 +66,11 @@ try {
     $stmt = $pdo->prepare(
         'INSERT INTO public.proveedores (nombre_proveedor, sitio_web)
          VALUES (:n, :w)
-         RETURNING id'
+         RETURNING id, created_at'
     );
     $stmt->execute([':n' => $nombre, ':w' => $sitioWebBd]);
-    $id = $stmt->fetchColumn();
+    $fila = $stmt->fetch(PDO::FETCH_ASSOC);
+    $id   = $fila['id'];
 
     if ($tipos) {
         $insTipo = $pdo->prepare(
@@ -100,5 +101,18 @@ registrar_auditoria(
         'tipos'            => $tipos,
     ]
 );
+
+// --- Tiempo real ----------------------------------------------------
+// Se avisa a los navegadores que tienen el listado abierto para que inserten
+// la fila sin recargar. Se emite SOLO tras el commit y la auditoria: el evento
+// viaja con los datos de la fila (incluidos los tipos) para no volver a
+// consultar la BD en el cliente.
+notificar_socket('proveedores', 'proveedor:creado', [
+    'id'               => $id,
+    'nombre_proveedor' => $nombre,
+    'sitio_web'        => $sitioWebBd,
+    'tipos'            => $tipos,
+    'created_at'       => $fila['created_at'],
+]);
 
 json_ok(['id' => $id], 'Proveedor creado correctamente');

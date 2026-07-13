@@ -98,12 +98,23 @@ registrar_auditoria(
     ]
 );
 
-json_ok([
+// --- Tiempo real ----------------------------------------------------
+// Avisa a los navegadores que tienen abierto el DETALLE (tablero Kanban) de
+// este proyecto para que agreguen la tarjeta al final de su columna sin
+// recargar el tablero. El evento llega a la sala del modulo; viaja con
+// proyecto_id (para filtrar por detalle) y columna_id (destino), ademas de los
+// datos de la tarjeta (recien creada: sin responsables ni completado). Se emite
+// SOLO tras el commit y la auditoria (fire-and-forget: nunca rompe la operacion).
+$tarjeta = [
     'id'             => $id,
+    'proyecto_id'    => $proyectoId,
     'columna_id'     => $columnaId,
     'titulo'         => $titulo,
     'descripcion'    => $descripBd,
     'prioridad'      => $prioridad,
     'orden_posicion' => $pos,
     'responsables'   => '',
-], 'Tarea creada correctamente');
+];
+notificar_socket('proyectos', 'tarea:creada', $tarjeta);
+
+json_ok($tarjeta, 'Tarea creada correctamente');

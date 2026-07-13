@@ -12,6 +12,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config/bootstrap.php';
 require_once __DIR__ . '/_comun.php';
+require_once __DIR__ . '/_fila_socket.php';
 
 solo_metodo('POST');
 requiere_permiso('Proyectos', 'editar');
@@ -157,5 +158,15 @@ registrar_auditoria(
         'hosting'                => $rels['hosting'],
     ]
 );
+
+// --- Tiempo real ----------------------------------------------------
+// Se avisa a los navegadores que tienen el listado abierto para que reemplacen
+// la fila sin recargar. Se reconsulta con la MISMA forma que el listado (helper
+// compartido: cliente y recursos N:N ya resueltos), asi el navegador no
+// reconsulta la BD. Se emite SOLO tras el commit y la auditoria.
+$filaProy = fila_proyecto_socket($pdo, $id);
+if ($filaProy) {
+    notificar_socket('proyectos', 'proyecto:actualizado', $filaProy);
+}
 
 json_ok(['id' => $id], 'Proyecto actualizado correctamente');

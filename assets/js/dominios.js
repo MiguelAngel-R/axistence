@@ -25,6 +25,7 @@ $(function () {
     var dropFechas = null;
     var cbCuenta = null;       // combobox de cuenta (general.js)
     var VPS_EXTERNO = "__externo__";   // valor centinela de la opcion "Servidor externo"
+    var socketActivo = false;   // true cuando el socket de tiempo real esta conectado
 
     function money(v) {
         var n = parseFloat(v);
@@ -120,6 +121,115 @@ $(function () {
         clearTimeout(temporizador);
         temporizador = setTimeout(function () { estado.buscar = valor.trim(); estado.pagina = 1; cargar(); }, 350);
     });
+
+    // ===============================================================
+    //  Tiempo real (Socket.IO)
+    //  El listado inserta en vivo la fila cuando se registra un dominio (por
+    //  cualquier usuario, incluido uno mismo), sin recargar ni volver a
+    //  consultar la BD: el evento ya trae la fila con los nombres de proveedor
+    //  y VPS resueltos. La escritura sigue yendo por HTTP al endpoint; el
+    //  socket solo REPARTE lo que PHP confirma tras guardar.
+    // ===============================================================
+
+    // Localiza la fila del listado cuyo registro embebido tiene ese id.
+    function filaPorId(id) {
+        return $tbody.find("tr").filter(function () {
+            var d = AX.datosFila(this);
+            return d && d.id === id;
+        });
+    }
+
+    // Alta: inserta la fila en su posicion alfabetica (el listado va ordenado
+    // por nombre de dominio). Solo aplica en la primera pagina y sin busqueda
+    // activa; en otro caso la fila aparecera al navegar/filtrar.
+    function socketDominioCreado(dominio) {
+        if (!dominio || !dominio.id) { return; }
+        if (estado.pagina !== 1 || estado.buscar !== "") { return; }
+        if (filaPorId(dominio.id).length) { return; }        // evita duplicar
+        $tbody.find(".tabla-vacia").closest("tr").remove();  // quita el placeholder "vacio"
+        var $nueva = $(fila(dominio));
+        var nombre = dominio.nombre_dominio || "";
+        var insertado = false;
+        $tbody.find("tr").each(function () {
+            var d = AX.datosFila(this);
+            if (d && nombre.localeCompare(d.nombre_dominio || "", "es", { sensitivity: "base" }) < 0) {
+                $nueva.insertBefore(this);
+                insertado = true;
+                return false;
+            }
+        });
+        if (!insertado) { $tbody.append($nueva); }
+    }
+
+    // Edicion: reemplaza la fila si esta en pantalla. El evento trae la fila
+    // completa (misma forma que el listado, con proveedor/VPS y vencimiento ya
+    // resueltos), asi que se reemplaza tal cual sin fusionar.
+    function socketDominioActualizado(dominio) {
+        if (!dominio || !dominio.id) { return; }
+        var $fila = filaPorId(dominio.id);
+        if (!$fila.length) { return; }
+        $fila.replaceWith(fila(dominio));
+    }
+
+    // Borrado: quita la fila; si la tabla queda vacia, muestra el placeholder.
+    function socketDominioEliminado(payload) {
+        var id = payload && payload.id;
+        if (!id) { return; }
+        var $fila = filaPorId(id);
+        if (!$fila.length) { return; }
+        $fila.remove();
+        if (!$tbody.children().length) {
+            $tbody.html(filaVacia("No hay dominios registrados."));
+        }
+    }
+
+    // Alta de registro DNS en vivo (detalle). El evento llega a toda la sala;
+    // solo aplica si el detalle abierto es el de ese dominio. Se pinta en la
+    // pestaña general y, segun el tipo, en su pestaña asociada (A/AAAA, MX, TXT,
+    // CNAME). Los tipos sin pestaña propia (NS, SRV, CAA) solo van a la general.
+    function socketDnsCreado(payload) {
+        if (!payload || !payload.id || !payload.dominio_id) { return; }
+        if (detalleId !== payload.dominio_id) { return; }   // no es el dominio en pantalla
+        insertarDns($("#detDns"), payload, filaDnsGeneral); // pestaña general (siempre)
+        switch (payload.tipo_registro) {
+            case "A":
+            case "AAAA":  insertarDns($("#detDnsA"), payload, filaDnsA); break;
+            case "MX":    insertarDns($("#detDnsMx"), payload, filaDnsMx); break;
+            case "TXT":   insertarDns($("#detDnsTxt"), payload, filaDnsTxt); break;
+            case "CNAME": insertarDns($("#detDnsCname"), payload, filaDnsCname); break;
+        }
+        aplicarFiltrosDetalle(); // respeta el filtro/busqueda vigente en la pestaña activa
+    }
+
+    // Alta de nota en vivo (detalle). El evento llega a toda la sala; solo aplica
+    // si el detalle abierto es el de ese dominio. Se antepone porque la tabla va
+    // ordenada por fecha DESC (la mas reciente arriba).
+    function socketNotaCreada(payload) {
+        if (!payload || !payload.id || !payload.dominio_id) { return; }
+        if (detalleId !== payload.dominio_id) { return; }   // no es el dominio en pantalla
+        var $cuerpo = $("#detNotas");
+        if ($cuerpo.find('tr[data-id="' + payload.id + '"]').length) { return; } // evita duplicar
+        $cuerpo.find(".tabla-vacia").closest("tr").remove();                     // quita placeholder
+        $cuerpo.prepend(filaNota(payload));
+        aplicarFiltrosDetalle(); // respeta el filtro/busqueda vigente en la pestaña
+    }
+
+    function conectarSocketDominios() {
+        var url = $vistaListado.data("ws");
+        // Sin URL o sin la libreria cargada: la app sigue funcionando (con recarga).
+        if (!url || typeof io === "undefined") { return; }
+        var socket = io(url, { transports: ["websocket", "polling"], withCredentials: true });
+        socket.on("connect", function () {
+            socketActivo = true;
+            socket.emit("unirse", "dominios"); // entra a la sala del modulo
+        });
+        socket.on("disconnect", function () { socketActivo = false; });
+        socket.on("dominio:creado", socketDominioCreado);
+        socket.on("dominio:actualizado", socketDominioActualizado);
+        socket.on("dominio:eliminado", socketDominioEliminado);
+        socket.on("dns:creado", socketDnsCreado);   // detalle: alta de registro DNS en vivo
+        socket.on("nota:creada", socketNotaCreada); // detalle: alta de nota en vivo
+    }
 
     // ===============================================================
     //  Opciones y cuentas del formulario
@@ -409,6 +519,64 @@ $(function () {
     });
 
     // ===============================================================
+    //  Registros DNS (filas del detalle)
+    //  Una sola tabla de registros repartida por pestañas (vistas filtradas por
+    //  tipo). Cada pestaña tiene su propio layout de columnas, por eso hay un
+    //  renderizador por pestaña. Todas embeben data-id para poder deduplicar al
+    //  insertar en vivo por socket. Los usan tanto el pintado inicial como el
+    //  alta en tiempo real.
+    // ===============================================================
+    function trDns(r) { return '<tr data-id="' + AX.escaparHtml(r.id) + '">'; }
+
+    function filaDnsGeneral(r) {
+        return trDns(r) + "<td>" + AX.escaparHtml(r.tipo_registro) + "</td>" +
+               "<td>" + AX.escaparHtml(r.nombre) + "</td>" +
+               "<td>" + AX.escaparHtml(r.valor) + "</td>" +
+               "<td>" + AX.escaparHtml(r.ttl) + "</td>" +
+               "<td>" + AX.escaparHtml(r.prioridad != null ? r.prioridad : "—") + "</td></tr>";
+    }
+    function filaDnsA(r) {
+        return trDns(r) + "<td>" + AX.escaparHtml(r.tipo_registro) + "</td>" +
+               "<td>" + AX.escaparHtml(r.nombre) + "</td>" +
+               "<td>" + AX.escaparHtml(r.valor) + "</td>" +
+               "<td>" + AX.escaparHtml(r.ttl) + "</td></tr>";
+    }
+    function filaDnsMx(r) {
+        return trDns(r) + "<td>" + AX.escaparHtml(r.prioridad != null ? r.prioridad : "—") + "</td>" +
+               "<td>" + AX.escaparHtml(r.nombre) + "</td>" +
+               "<td>" + AX.escaparHtml(r.valor) + "</td>" +
+               "<td>" + AX.escaparHtml(r.ttl) + "</td></tr>";
+    }
+    function filaDnsTxt(r) {
+        return trDns(r) + "<td>" + AX.escaparHtml(r.nombre) + "</td>" +
+               "<td>" + AX.escaparHtml(r.valor) + "</td>" +
+               "<td>" + AX.escaparHtml(r.ttl) + "</td></tr>";
+    }
+    // CNAME comparte layout con TXT (nombre · valor · ttl).
+    var filaDnsCname = filaDnsTxt;
+
+    // Inserta un registro DNS en la pestaña indicada sin recargar. Deduplica por
+    // data-id (el propio actor tambien recibe el evento) y quita el placeholder.
+    function insertarDns($cuerpo, registro, filaFn) {
+        if (!$cuerpo.length) { return; }
+        if ($cuerpo.find('tr[data-id="' + registro.id + '"]').length) { return; } // evita duplicar
+        $cuerpo.find(".tabla-vacia").closest("tr").remove();                       // quita placeholder
+        $cuerpo.append(filaFn(registro));
+    }
+
+    // Fila de la tabla de Notas del detalle (con criticidad visual). Embebe
+    // data-id (dedup en vivo) y data-fecha (filtro por rango). La usan el pintado
+    // inicial y el alta en tiempo real.
+    function filaNota(r) {
+        var f = r.fecha ? String(r.fecha).substring(0, 10) : "";
+        return '<tr data-id="' + AX.escaparHtml(r.id) + '" data-fecha="' + AX.escaparHtml(f) + '"' + critClaseFila(r.criticidad) + ">" +
+               "<td>" + AX.formatearFecha(r.fecha) + "</td>" +
+               "<td>" + critBadge(r.criticidad) + "</td>" +
+               "<td>" + AX.escaparHtml(r.autor || "—") + "</td>" +
+               "<td>" + AX.escaparHtml(r.nota) + "</td></tr>";
+    }
+
+    // ===============================================================
     //  Detalle (viewProducto)
     // ===============================================================
     function tbodyActivo() { return $("#detTabsContent .tab-pane.active tbody"); }
@@ -528,35 +696,11 @@ $(function () {
         var dns = d.dns || [];
         function porTipo(tipos) { return dns.filter(function (r) { return tipos.indexOf(r.tipo_registro) !== -1; }); }
 
-        pintarSeccion($("#detDns"), dns, 5, function (r) {
-            return "<tr><td>" + AX.escaparHtml(r.tipo_registro) + "</td>" +
-                   "<td>" + AX.escaparHtml(r.nombre) + "</td>" +
-                   "<td>" + AX.escaparHtml(r.valor) + "</td>" +
-                   "<td>" + AX.escaparHtml(r.ttl) + "</td>" +
-                   "<td>" + AX.escaparHtml(r.prioridad != null ? r.prioridad : "—") + "</td></tr>";
-        });
-        pintarSeccion($("#detDnsA"), porTipo(["A", "AAAA"]), 4, function (r) {
-            return "<tr><td>" + AX.escaparHtml(r.tipo_registro) + "</td>" +
-                   "<td>" + AX.escaparHtml(r.nombre) + "</td>" +
-                   "<td>" + AX.escaparHtml(r.valor) + "</td>" +
-                   "<td>" + AX.escaparHtml(r.ttl) + "</td></tr>";
-        });
-        pintarSeccion($("#detDnsMx"), porTipo(["MX"]), 4, function (r) {
-            return "<tr><td>" + AX.escaparHtml(r.prioridad != null ? r.prioridad : "—") + "</td>" +
-                   "<td>" + AX.escaparHtml(r.nombre) + "</td>" +
-                   "<td>" + AX.escaparHtml(r.valor) + "</td>" +
-                   "<td>" + AX.escaparHtml(r.ttl) + "</td></tr>";
-        });
-        pintarSeccion($("#detDnsTxt"), porTipo(["TXT"]), 3, function (r) {
-            return "<tr><td>" + AX.escaparHtml(r.nombre) + "</td>" +
-                   "<td>" + AX.escaparHtml(r.valor) + "</td>" +
-                   "<td>" + AX.escaparHtml(r.ttl) + "</td></tr>";
-        });
-        pintarSeccion($("#detDnsCname"), porTipo(["CNAME"]), 3, function (r) {
-            return "<tr><td>" + AX.escaparHtml(r.nombre) + "</td>" +
-                   "<td>" + AX.escaparHtml(r.valor) + "</td>" +
-                   "<td>" + AX.escaparHtml(r.ttl) + "</td></tr>";
-        });
+        pintarSeccion($("#detDns"), dns, 5, filaDnsGeneral);
+        pintarSeccion($("#detDnsA"), porTipo(["A", "AAAA"]), 4, filaDnsA);
+        pintarSeccion($("#detDnsMx"), porTipo(["MX"]), 4, filaDnsMx);
+        pintarSeccion($("#detDnsTxt"), porTipo(["TXT"]), 3, filaDnsTxt);
+        pintarSeccion($("#detDnsCname"), porTipo(["CNAME"]), 3, filaDnsCname);
 
         // Historial (logs de auditoria del dominio).
         pintarSeccion($("#detLogs"), d.logs, 5, function (r) {
@@ -568,14 +712,7 @@ $(function () {
         });
 
         // Notas (con criticidad visual): la fila se tinta segun la prioridad.
-        pintarSeccion($("#detNotas"), d.notas, 4, function (r) {
-            var f = r.fecha ? String(r.fecha).substring(0, 10) : "";
-            return '<tr data-fecha="' + AX.escaparHtml(f) + '"' + critClaseFila(r.criticidad) + ">" +
-                   "<td>" + AX.formatearFecha(r.fecha) + "</td>" +
-                   "<td>" + critBadge(r.criticidad) + "</td>" +
-                   "<td>" + AX.escaparHtml(r.autor || "—") + "</td>" +
-                   "<td>" + AX.escaparHtml(r.nota) + "</td></tr>";
-        });
+        pintarSeccion($("#detNotas"), d.notas, 4, filaNota);
 
         aplicarFiltrosDetalle();
     }
@@ -668,7 +805,9 @@ $(function () {
             if (res.ok) {
                 modalAddDns.cerrar();
                 AX.exito("Registro DNS agregado correctamente.");
-                refrescarDetalle();
+                // La fila aparece en vivo por socket (el propio actor la recibe);
+                // solo se refresca el detalle como respaldo si no hay socket.
+                if (!socketActivo) { refrescarDetalle(); }
             } else {
                 AX.errorFormulario("#formAddDnsError", res.mensaje || "No se pudo agregar el registro.");
                 $btn.prop("disabled", false);
@@ -696,7 +835,9 @@ $(function () {
             if (res.ok) {
                 modalAddNota.cerrar();
                 AX.exito("Nota agregada correctamente.");
-                refrescarDetalle();
+                // La fila aparece en vivo por socket (el propio actor la recibe);
+                // solo se refresca el detalle como respaldo si no hay socket.
+                if (!socketActivo) { refrescarDetalle(); }
             } else {
                 AX.errorFormulario("#formAddNotaDomError", res.mensaje || "No se pudo agregar la nota.");
                 $btn.prop("disabled", false);
@@ -719,8 +860,12 @@ $(function () {
 
     function trasGuardar() {
         modalForm.cerrar();
-        if (detalleId) { abrirDetalle(detalleId); }
-        else { cargar(); }
+        // Si se guardo desde el detalle, se refresca el detalle: el socket solo
+        // actualiza la fila del listado, no la vista de detalle.
+        if (detalleId) { abrirDetalle(detalleId); return; }
+        // En el listado: alta y edicion aparecen en vivo por socket (el propio
+        // actor recibe el evento); solo se recarga como respaldo si no hay socket.
+        if (!socketActivo) { cargar(); }
     }
 
     function volverAlListado() {
@@ -748,7 +893,11 @@ $(function () {
         }).then(function (r) {
             if (!r.isConfirmed) { return; }
             AX.enviarJSON("endpoints/dominios/eliminar.php", { id: reg.id }).then(function (res) {
-                if (res.ok) { AX.exito(res.mensaje || "Dominio eliminado."); cargar(); }
+                if (res.ok) {
+                    AX.exito(res.mensaje || "Dominio eliminado.");
+                    // La fila se quita en vivo por socket; recarga de respaldo si no hay socket.
+                    if (!socketActivo) { cargar(); }
+                }
                 else { AX.error(res.mensaje || "No se pudo eliminar el dominio."); }
             }).catch(function () { AX.error("No se pudo eliminar el dominio."); });
         });
@@ -776,6 +925,7 @@ $(function () {
     cbCuenta = AX.combobox("#cbCuentaDominio");
     inicializarFiltrosDetalle();
     cargar();
+    conectarSocketDominios(); // tiempo real: escucha altas
 
     // Deep linking: si se llego con ?detalle=<uuid>, abrir ese detalle.
     var detallePedido = AX.detalleSolicitado();

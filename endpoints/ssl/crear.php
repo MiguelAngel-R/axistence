@@ -13,6 +13,7 @@ declare(strict_types=1);
 // =====================================================================
 
 require_once __DIR__ . '/../config/bootstrap.php';
+require_once __DIR__ . '/_fila_socket.php';
 
 solo_metodo('POST');
 requiere_permiso('SSL', 'crear');
@@ -142,5 +143,16 @@ registrar_auditoria(
         'precio_venta'        => $precioVbd,
     ]
 );
+
+// --- Tiempo real ----------------------------------------------------
+// Se avisa a los navegadores que tienen el listado abierto para que inserten la
+// fila sin recargar. La fila se reconsulta con la MISMA forma que el listado
+// (helper compartido: resuelve nombres de dominio/proveedor/VPS), asi el
+// navegador no reconsulta la BD. Se emite SOLO tras el commit y la auditoria
+// (fire-and-forget: nunca rompe la operacion).
+$filaSsl = fila_ssl_socket($pdo, $id);
+if ($filaSsl) {
+    notificar_socket('ssl', 'ssl:creado', $filaSsl);
+}
 
 json_ok(['id' => $id], 'Certificado SSL creado correctamente');

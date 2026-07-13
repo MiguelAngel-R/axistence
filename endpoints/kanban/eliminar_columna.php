@@ -70,4 +70,15 @@ registrar_auditoria(
     null
 );
 
+// --- Tiempo real ----------------------------------------------------
+// Avisa a los navegadores que tienen abierto el tablero de este proyecto para
+// que quiten la columna sin recargar. Viajan proyecto_id (para filtrar por
+// detalle) y columna_id. La columna borrada no tenia tarjetas (ya validado). No
+// se emite en los casos 409 (columna con tarjetas o unica columna): ahi no hubo
+// borrado. Se emite SOLO tras el borrado y la auditoria (fire-and-forget).
+notificar_socket('proyectos', 'columna:eliminada', [
+    'proyecto_id' => $proyectoId,
+    'columna_id'  => $columnaId,
+]);
+
 json_ok(['id' => $columnaId], 'Columna eliminada');

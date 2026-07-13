@@ -71,4 +71,21 @@ $id = $stmt->fetchColumn();
 auditar_en_dominio($dominioId, 'Agrego un registro DNS ' . $tipo . ' (' . $nombre . ') a ' . $dominio,
     ['tipo_registro' => $tipo, 'nombre' => $nombre, 'valor' => $valor, 'ttl' => (int)$ttl, 'prioridad' => $prioridadBd]);
 
+// --- Tiempo real ----------------------------------------------------
+// Avisa a los navegadores que tienen abierto el DETALLE de este dominio para que
+// agreguen la fila del registro DNS (en la pestaña general y en la de su tipo)
+// sin recargar ni volver a consultar la BD. El evento llega a toda la sala del
+// modulo; viaja con el dominio_id para que cada navegador decida si le
+// corresponde, y con los datos de la fila. Se emite SOLO tras la insercion y la
+// auditoria (fire-and-forget: nunca rompe la operacion).
+notificar_socket('dominios', 'dns:creado', [
+    'id'            => $id,
+    'dominio_id'    => $dominioId,
+    'tipo_registro' => $tipo,
+    'nombre'        => $nombre,
+    'valor'         => $valor,
+    'ttl'           => (int)$ttl,
+    'prioridad'     => $prioridadBd,
+]);
+
 json_ok(['id' => $id], 'Registro DNS agregado correctamente');

@@ -12,6 +12,12 @@
 
    NOTA: la accion "Eliminar" ejecuta un borrado real (confirmacion + endpoint
    eliminar.php + auditoria ELIMINAR); el esquema borra en cascada.
+
+   TIEMPO REAL (Socket.IO): el listado se actualiza en vivo (insertar/actualizar/
+   quitar la fila) cuando se crea, edita o elimina un cliente, sin recargar ni
+   volver a consultar la BD. La escritura sigue yendo por HTTP a los endpoints;
+   el server de sockets (websockets/index2.js) solo REPARTE lo que PHP confirma.
+   Si el socket no esta activo, se recae en recargar el listado (respaldo).
    ===================================================================== */
 
 $(function () {
@@ -32,6 +38,7 @@ $(function () {
     var modoContacto = "crear";     // "crear" | "editar" (mismo modal para ambos)
     var contactoEditandoId = null;  // id del contacto en edicion (null en alta)
     var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    var socketActivo = false;   // true cuando el socket de tiempo real esta conectado
 
     function filaVacia(mensaje) {
         return '<tr><td colspan="' + COLUMNAS + '" class="tabla-vacia">' +
@@ -254,7 +261,9 @@ $(function () {
         }).done(function (res) {
             if (res && res.ok) {
                 modalCliente.cerrar();
-                cargar(); // recarga la lista
+                // La tabla se actualiza en vivo por socket (el propio actor recibe
+                // el evento). Si el socket no esta activo, se recarga como respaldo.
+                if (!socketActivo) { cargar(); }
                 AX.exito(esEditar ? "El cliente se actualizó correctamente." : "El cliente se creó correctamente.");
             } else {
                 errorFormulario((res && res.mensaje) || "No se pudo guardar el cliente.");
@@ -288,7 +297,11 @@ $(function () {
         }).then(function (r) {
             if (!r.isConfirmed) { return; }
             AX.enviarJSON("endpoints/clientes/eliminar.php", { id: cliente.id }).then(function (res) {
-                if (res.ok) { AX.exito(res.mensaje || "Cliente eliminado."); cargar(); }
+                if (res.ok) {
+                    AX.exito(res.mensaje || "Cliente eliminado.");
+                    // La fila se quita en vivo por socket; recarga de respaldo si no hay socket.
+                    if (!socketActivo) { cargar(); }
+                }
                 else { AX.error(res.mensaje || "No se pudo eliminar el cliente."); }
             }).catch(function () { AX.error("No se pudo eliminar el cliente."); });
         });
@@ -315,6 +328,135 @@ $(function () {
         // Clic en cualquier otra parte de la fila -> detalle.
         if (cliente) { abrirDetalle(cliente.id); }
     });
+
+    // =================================================================
+    //  Tiempo real (Socket.IO)
+    //  El listado se actualiza en vivo cuando se crea, edita o elimina un
+    //  cliente (por cualquier usuario, incluido uno mismo), sin recargar la
+    //  tabla ni volver a consultar la BD: el evento ya trae los datos de la
+    //  fila. La escritura sigue yendo por HTTP a los endpoints; el socket solo
+    //  REPARTE los cambios que PHP confirma tras guardar.
+    // =================================================================
+
+    // Localiza la fila del listado cuyo registro embebido tiene ese id.
+    function filaPorId(id) {
+        return $tbody.find("tr").filter(function () {
+            var d = AX.datosFila(this);
+            return d && d.id === id;
+        });
+    }
+
+    // Alta: inserta la fila en su posicion alfabetica (el listado va ordenado
+    // por nombre). Solo aplica en la primera pagina y sin busqueda activa; en
+    // otro caso la fila aparecera de forma natural al navegar/filtrar.
+    function socketClienteCreado(cliente) {
+        if (!cliente || !cliente.id) { return; }
+        if (estado.pagina !== 1 || estado.buscar !== "") { return; }
+        if (filaPorId(cliente.id).length) { return; }        // evita duplicar
+        $tbody.find(".tabla-vacia").closest("tr").remove();  // quita el placeholder "vacio"
+        var $nueva = $(fila(cliente));
+        var nombre = cliente.nombre_razon_social || "";
+        var insertado = false;
+        $tbody.find("tr").each(function () {
+            var d = AX.datosFila(this);
+            if (d && nombre.localeCompare(d.nombre_razon_social || "", "es", { sensitivity: "base" }) < 0) {
+                $nueva.insertBefore(this);
+                insertado = true;
+                return false;
+            }
+        });
+        if (!insertado) { $tbody.append($nueva); }
+    }
+
+    // Edicion: reemplaza la fila si esta en pantalla, fusionando sobre los datos
+    // previos (conserva lo que el evento no traiga, p. ej. campos no visibles).
+    function socketClienteActualizado(cliente) {
+        if (!cliente || !cliente.id) { return; }
+        var $fila = filaPorId(cliente.id);
+        if (!$fila.length) { return; }
+        var previo = AX.datosFila($fila[0]) || {};
+        $fila.replaceWith(fila($.extend({}, previo, cliente)));
+    }
+
+    // Borrado: quita la fila; si la tabla queda vacia, muestra el placeholder.
+    function socketClienteEliminado(payload) {
+        var id = payload && payload.id;
+        if (!id) { return; }
+        var $fila = filaPorId(id);
+        if (!$fila.length) { return; }
+        $fila.remove();
+        if (!$tbody.children().length) {
+            $tbody.html(filaVacia("No hay clientes registrados."));
+        }
+    }
+
+    // Quita la marca de "principal" a las filas de contactos ya pintadas (en
+    // pantalla y en sus datos embebidos), porque solo puede haber un principal
+    // por cliente. Se usa cuando llega un contacto (nuevo o editado) marcado como
+    // principal. 'exceptoId' evita tocar la fila que el llamador ya reemplazo.
+    function desmarcarContactosPrincipales($cuerpo, exceptoId) {
+        $cuerpo.find("tr").each(function () {
+            var d = AX.datosFila(this);
+            if (d && d.es_contacto_principal && d.id !== exceptoId) {
+                d.es_contacto_principal = false;
+                $(this).replaceWith(filaContacto(d));
+            }
+        });
+    }
+
+    // Alta de contacto en vivo (pestaña Contactos del detalle). El evento llega a
+    // toda la sala del modulo; solo aplica si el detalle abierto es el de ese
+    // cliente. La fila ya viaja con los datos, asi que no se consulta la BD.
+    function socketContactoCreado(payload) {
+        if (!payload || !payload.id || !payload.cliente_id) { return; }
+        if (detalleId !== payload.cliente_id) { return; }   // no es el cliente en pantalla
+        var $cuerpo = $("#detContactos");
+        // Evita duplicar: el propio actor tambien recibe el evento.
+        var duplicado = $cuerpo.find("tr").filter(function () {
+            var d = AX.datosFila(this);
+            return d && d.id === payload.id;
+        }).length > 0;
+        if (duplicado) { return; }
+        // Si el nuevo es principal, los demas dejan de serlo (solo uno principal).
+        if (payload.es_contacto_principal) { desmarcarContactosPrincipales($cuerpo); }
+        $cuerpo.find(".tabla-vacia").closest("tr").remove(); // quita el placeholder "vacio"
+        $cuerpo.append(filaContacto(payload));
+        aplicarFiltrosDetalle(); // respeta el filtro/busqueda vigente en la pestaña
+    }
+
+    // Edicion de contacto en vivo: reemplaza la fila si el detalle abierto es el
+    // de ese cliente. El payload trae la fila ya actualizada, sin consultar la BD.
+    function socketContactoActualizado(payload) {
+        if (!payload || !payload.id || !payload.cliente_id) { return; }
+        if (detalleId !== payload.cliente_id) { return; }   // no es el cliente en pantalla
+        var $cuerpo = $("#detContactos");
+        var $fila = $cuerpo.find("tr").filter(function () {
+            var d = AX.datosFila(this);
+            return d && d.id === payload.id;
+        });
+        if (!$fila.length) { return; }
+        $fila.replaceWith(filaContacto(payload));
+        // Si ahora es principal, los demas dejan de serlo (solo uno principal).
+        if (payload.es_contacto_principal) { desmarcarContactosPrincipales($cuerpo, payload.id); }
+        aplicarFiltrosDetalle(); // respeta el filtro/busqueda vigente en la pestaña
+    }
+
+    function conectarSocketClientes() {
+        var url = $vistaListado.data("ws");
+        // Sin URL o sin la libreria cargada: la app sigue funcionando (con recarga).
+        if (!url || typeof io === "undefined") { return; }
+        var socket = io(url, { transports: ["websocket", "polling"], withCredentials: true });
+        socket.on("connect", function () {
+            socketActivo = true;
+            socket.emit("unirse", "clientes"); // entra a la sala del modulo
+        });
+        socket.on("disconnect", function () { socketActivo = false; });
+        socket.on("cliente:creado", socketClienteCreado);
+        socket.on("cliente:actualizado", socketClienteActualizado);
+        socket.on("cliente:eliminado", socketClienteEliminado);
+        socket.on("contacto:creado", socketContactoCreado);           // detalle: alta de contacto en vivo
+        socket.on("contacto:actualizado", socketContactoActualizado); // detalle: edicion de contacto en vivo
+    }
 
     // =================================================================
     //  Vista de DETALLE consolidada (viewClientes)
@@ -478,18 +620,7 @@ $(function () {
 
         // Personas de contacto. Cada fila embebe sus datos (data-registro) para
         // que "Actualizar" pueble el formulario sin volver a consultar la BD.
-        pintarSeccion($("#detContactos"), d.contactos, 6, function (x) {
-            var principal = x.es_contacto_principal ? '<i class="bi bi-star-fill"></i> Sí' : "No";
-            return '<tr data-registro="' + AX.escaparHtml(JSON.stringify(x)) + '">' +
-                "<td>" + AX.escaparHtml(x.nombre_completo) + "</td>" +
-                "<td>" + AX.escaparHtml(x.cargo_puesto || "—") + "</td>" +
-                "<td>" + AX.escaparHtml(x.email || "—") + "</td>" +
-                "<td>" + AX.escaparHtml(x.telefono_movil || x.telefono_fijo || "—") + "</td>" +
-                "<td>" + principal + "</td>" +
-                '<td class="tabla-acciones">' +
-                    '<button type="button" class="btn-icono" data-accion="editar-contacto" title="Actualizar"><i class="bi bi-pencil"></i></button>' +
-                "</td></tr>";
-        });
+        pintarSeccion($("#detContactos"), d.contactos, 6, filaContacto);
 
         // Notas (con autor).
         pintarSeccion($("#detNotas"), d.notas, 3, function (x) {
@@ -523,6 +654,22 @@ $(function () {
     // =================================================================
     //  Alta de persona de contacto (pestaña Contactos del detalle)
     // =================================================================
+
+    // Fila de la tabla de contactos del detalle. Embebe sus datos (data-registro)
+    // para que "Actualizar" pueble el formulario sin consultar la BD. La usan tanto
+    // el pintado inicial (pintarDetalle) como el alta en vivo por socket.
+    function filaContacto(x) {
+        var principal = x.es_contacto_principal ? '<i class="bi bi-star-fill"></i> Sí' : "No";
+        return '<tr data-registro="' + AX.escaparHtml(JSON.stringify(x)) + '">' +
+            "<td>" + AX.escaparHtml(x.nombre_completo) + "</td>" +
+            "<td>" + AX.escaparHtml(x.cargo_puesto || "—") + "</td>" +
+            "<td>" + AX.escaparHtml(x.email || "—") + "</td>" +
+            "<td>" + AX.escaparHtml(x.telefono_movil || x.telefono_fijo || "—") + "</td>" +
+            "<td>" + principal + "</td>" +
+            '<td class="tabla-acciones">' +
+                '<button type="button" class="btn-icono" data-accion="editar-contacto" title="Actualizar"><i class="bi bi-pencil"></i></button>' +
+            "</td></tr>";
+    }
 
     // contacto: objeto de la fila cuando es edicion; null/undefined cuando es alta.
     // El mismo modal sirve para ambos; en edicion se puebla desde la fila.
@@ -589,7 +736,10 @@ $(function () {
         }).done(function (res) {
             if (res && res.ok) {
                 modalContacto.cerrar();
-                solicitarDetalle(pintarDetalle); // refresca la tabla sin salir de la pestaña
+                // Tanto el alta como la edicion aparecen en vivo por socket (el
+                // propio actor recibe el evento); solo se recarga como respaldo
+                // si el socket no esta activo.
+                if (!socketActivo) { solicitarDetalle(pintarDetalle); }
                 AX.exito(msgExito);
             } else {
                 AX.errorFormulario("#formContactoError", (res && res.mensaje) || msgError);
@@ -623,6 +773,7 @@ $(function () {
     AX.vincularVolver(volverAlListado);
     inicializarFiltrosDetalle();
     cargar();
+    conectarSocketClientes(); // tiempo real: escucha altas/ediciones/borrados
 
     // Deep linking: si se llego con ?detalle=<uuid>, abrir ese detalle.
     var detallePedido = AX.detalleSolicitado();
