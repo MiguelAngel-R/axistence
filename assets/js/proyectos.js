@@ -6,7 +6,8 @@
    filtros. El tablero Kanban se implementara despues.
    Espejo de assets/js/hosting.js.
 
-   NOTA: la accion "Eliminar" queda solo maquetada; no se implementa borrado.
+   NOTA: la accion "Eliminar" ejecuta un borrado real (confirmacion + endpoint
+   eliminar.php + auditoria ELIMINAR).
    ===================================================================== */
 
 $(function () {
@@ -27,6 +28,7 @@ $(function () {
     var opciones = null;       // { clientes, usuarios, dominios, vps, ssl, hosting }
     var dropFechas = null;
     var msEquipo = null, msDominios = null, msHosting = null;
+    var socketActivo = false;   // true cuando el socket de tiempo real esta conectado
 
     // Estado del tablero Kanban (viewProyecto).
     var kanbanSortables = [];  // instancias Sortable vivas (se destruyen al repintar)
@@ -111,6 +113,243 @@ $(function () {
         clearTimeout(temporizador);
         temporizador = setTimeout(function () { estado.buscar = valor.trim(); estado.pagina = 1; cargar(); }, 350);
     });
+
+    // ===============================================================
+    //  Tiempo real (Socket.IO)
+    //  El listado se actualiza en vivo (insertar/actualizar/quitar la fila)
+    //  cuando se crea, edita o elimina un proyecto (por cualquier usuario,
+    //  incluido uno mismo), sin recargar ni volver a consultar la BD: el evento
+    //  ya trae la fila con el cliente y los recursos N:N resueltos. La escritura
+    //  sigue yendo por HTTP; el socket solo REPARTE lo que PHP confirma.
+    // ===============================================================
+
+    // Localiza la fila del listado cuyo registro embebido tiene ese id.
+    function filaPorId(id) {
+        return $tbody.find("tr").filter(function () {
+            var d = AX.datosFila(this);
+            return d && d.id === id;
+        });
+    }
+
+    // Orden del listado: fecha_inicio DESC (mas reciente primero), y a igual
+    // fecha, nombre ASC. Devuelve true si 'nuevo' va ANTES que la fila 'd'.
+    function proyectoVaAntes(nuevo, d) {
+        var fn = String(nuevo.fecha_inicio || "").substring(0, 10);
+        var fd = String(d.fecha_inicio || "").substring(0, 10);
+        if (fn !== fd) { return fn > fd; }  // fecha DESC
+        return (nuevo.nombre_proyecto || "").localeCompare(d.nombre_proyecto || "", "es", { sensitivity: "base" }) < 0;
+    }
+
+    // Alta: inserta la fila en su posicion segun el orden del listado. Solo aplica
+    // en la primera pagina y sin busqueda activa; en otro caso la fila aparecera
+    // al navegar/filtrar.
+    function socketProyectoCreado(p) {
+        if (!p || !p.id) { return; }
+        if (estado.pagina !== 1 || estado.buscar !== "") { return; }
+        if (filaPorId(p.id).length) { return; }              // evita duplicar
+        $tbody.find(".tabla-vacia").closest("tr").remove();  // quita el placeholder "vacio"
+        var $nueva = $(fila(p));
+        var insertado = false;
+        $tbody.find("tr").each(function () {
+            var d = AX.datosFila(this);
+            if (d && proyectoVaAntes(p, d)) {
+                $nueva.insertBefore(this);
+                insertado = true;
+                return false;
+            }
+        });
+        if (!insertado) { $tbody.append($nueva); }
+    }
+
+    // Edicion: reemplaza la fila si esta en pantalla. El evento trae la fila
+    // completa (misma forma que el listado), asi que se reemplaza sin fusionar.
+    function socketProyectoActualizado(p) {
+        if (!p || !p.id) { return; }
+        var $fila = filaPorId(p.id);
+        if (!$fila.length) { return; }
+        $fila.replaceWith(fila(p));
+    }
+
+    // Borrado: quita la fila; si la tabla queda vacia, muestra el placeholder.
+    function socketProyectoEliminado(payload) {
+        var id = payload && payload.id;
+        if (!id) { return; }
+        var $fila = filaPorId(id);
+        if (!$fila.length) { return; }
+        $fila.remove();
+        if (!$tbody.children().length) {
+            $tbody.html(filaVacia("No hay proyectos registrados."));
+        }
+    }
+
+    // Alta de tarjeta (tarea) en vivo, en el tablero Kanban del detalle. El
+    // evento llega a toda la sala; solo aplica si el detalle abierto es el de ese
+    // proyecto. La tarjeta se agrega al FINAL de su columna (igual que en el
+    // backend) y se actualiza el contador. Las tarjetas agregadas dinamicamente
+    // quedan arrastrables (Sortable delega en la lista) y responden a los clics
+    // (handlers delegados en el documento).
+    function socketTareaCreada(payload) {
+        if (!payload || !payload.id || !payload.columna_id) { return; }
+        if (!detalleId || detalleId !== payload.proyecto_id) { return; } // no es el proyecto en pantalla
+        // Dedup: el propio actor tambien recibe el evento.
+        if (document.querySelector('#kanbanTablero .kanban__card[data-tarea-id="' + payload.id + '"]')) { return; }
+        var lista = document.querySelector('#kanbanTablero .kanban__lista[data-columna-id="' + payload.columna_id + '"]');
+        if (!lista) { return; } // la columna no esta en pantalla (tablero en otro estado)
+        lista.insertAdjacentHTML("beforeend", tarjetaHtml(payload));
+        refrescarConteos();
+    }
+
+    // Movimiento de tarjeta en vivo (drag & drop). El evento llega a toda la
+    // sala; solo aplica si el detalle abierto es el de ese proyecto. Mueve la
+    // tarjeta a la columna destino y reordena esa columna segun 'orden'
+    // reinsertando sus tarjetas en secuencia (appendChild mueve el nodo, sin
+    // recrearlo: conserva prioridad, responsables y estado). Es idempotente: el
+    // propio actor, que ya movio en su DOM, lo reaplica sin efecto.
+    function socketTareaMovida(payload) {
+        if (!payload || !payload.tarea_id || !payload.columna_id) { return; }
+        if (!detalleId || detalleId !== payload.proyecto_id) { return; } // no es el proyecto en pantalla
+        var destino = document.querySelector('#kanbanTablero .kanban__lista[data-columna-id="' + payload.columna_id + '"]');
+        if (!destino) { return; } // la columna destino no esta en pantalla
+        var orden = payload.orden || [];
+        if (orden.length) {
+            // Reordena el destino segun 'orden' (los ids ausentes en el tablero se
+            // ignoran); arrastra tambien la tarjeta que venga de otra columna.
+            orden.forEach(function (id) {
+                var card = document.querySelector('#kanbanTablero .kanban__card[data-tarea-id="' + id + '"]');
+                if (card) { destino.appendChild(card); }
+            });
+        } else {
+            // Sin orden explicito: al menos lleva la tarjeta movida al destino.
+            var movida = document.querySelector('#kanbanTablero .kanban__card[data-tarea-id="' + payload.tarea_id + '"]');
+            if (movida && movida.parentNode !== destino) { destino.appendChild(movida); }
+        }
+        refrescarConteos();
+    }
+
+    // Reorden de columnas en vivo (drag & drop horizontal). El evento llega a
+    // toda la sala; solo aplica si el detalle abierto es el de ese proyecto.
+    // Reordena las columnas reinsertando cada una segun 'orden' con appendChild
+    // (mueve el nodo existente, sin recrearlo: conserva sus tarjetas y su estado).
+    // Es idempotente: el propio actor, que ya reordeno en su DOM, lo reaplica sin
+    // efecto.
+    function socketColumnasReordenadas(payload) {
+        if (!payload || !payload.proyecto_id) { return; }
+        if (!detalleId || detalleId !== payload.proyecto_id) { return; } // no es el proyecto en pantalla
+        var cont = document.getElementById("kanbanCols");
+        if (!cont) { return; } // el tablero no tiene columnas en pantalla
+        (payload.orden || []).forEach(function (id) {
+            var col = cont.querySelector('.kanban__col[data-columna-id="' + id + '"]');
+            if (col) { cont.appendChild(col); }
+        });
+    }
+
+    // Alta de columna en vivo. El evento llega a toda la sala; solo aplica si el
+    // detalle abierto es el de ese proyecto. La columna se agrega al FINAL (igual
+    // que en el backend). Tras insertarla se reinicializan los Sortable para que
+    // su lista de tarjetas quede arrastrable. Si el tablero estaba vacio (sin el
+    // contenedor #kanbanCols), se reconstruye con cargarTablero.
+    function socketColumnaCreada(payload) {
+        if (!payload || !payload.id) { return; }
+        if (!detalleId || detalleId !== payload.proyecto_id) { return; } // no es el proyecto en pantalla
+        // Dedup: el propio actor tambien recibe el evento.
+        if (document.querySelector('#kanbanTablero .kanban__col[data-columna-id="' + payload.id + '"]')) { return; }
+        var cont = document.getElementById("kanbanCols");
+        if (!cont) { cargarTablero(detalleId); return; } // tablero sin columnas: reconstruye
+        cont.insertAdjacentHTML("beforeend", columnaHtml(payload));
+        iniciarSortables(); // re-attach: la lista de la nueva columna queda arrastrable
+    }
+
+    // Borrado de columna en vivo. El evento llega a toda la sala; solo aplica si
+    // el detalle abierto es el de ese proyecto. Quita la columna del tablero (la
+    // columna borrada no tenia tarjetas). Su Sortable se descarta al quitar el
+    // nodo; no hace falta reinicializar el resto.
+    function socketColumnaEliminada(payload) {
+        if (!payload || !payload.columna_id) { return; }
+        if (!detalleId || detalleId !== payload.proyecto_id) { return; } // no es el proyecto en pantalla
+        var col = document.querySelector('#kanbanTablero .kanban__col[data-columna-id="' + payload.columna_id + '"]');
+        if (col) { col.remove(); }
+    }
+
+    // Completar/reabrir tarjeta en vivo. El evento llega a toda la sala; solo
+    // aplica si el detalle abierto es el de ese proyecto. Reutiliza el helper que
+    // usa el propio actor. Idempotente.
+    function socketTareaCompletada(payload) {
+        if (!payload || !payload.tarea_id) { return; }
+        if (!detalleId || detalleId !== payload.proyecto_id) { return; } // no es el proyecto en pantalla
+        aplicarCompletadaTarjeta(payload.tarea_id, !!payload.completada);
+    }
+
+    // Renombrar columna en vivo. Actualiza el nombre visible del encabezado y el
+    // atributo data-columna-nombre (que leen renombrar/eliminar de la columna).
+    function socketColumnaRenombrada(payload) {
+        if (!payload || !payload.columna_id) { return; }
+        if (!detalleId || detalleId !== payload.proyecto_id) { return; } // no es el proyecto en pantalla
+        var $col = $('#kanbanTablero .kanban__col[data-columna-id="' + payload.columna_id + '"]');
+        if (!$col.length) { return; }
+        var nombre = payload.nombre || "";
+        $col.attr("data-columna-nombre", nombre);
+        $col.find(".kanban__col-nombre").text(nombre).attr("title", nombre);
+    }
+
+    // Archivar/restaurar tarjeta en vivo. El evento llega a toda la sala; solo
+    // aplica si el detalle abierto es el de ese proyecto. Al archivar, quita la
+    // tarjeta del tablero. Al restaurar, la reinserta al final de su columna (el
+    // payload trae la tarjeta completa, porque las demas sesiones no la tienen).
+    function socketTareaArchivada(payload) {
+        if (!payload || !payload.tarea_id) { return; }
+        if (!detalleId || detalleId !== payload.proyecto_id) { return; } // no es el proyecto en pantalla
+        if (payload.archivar) {
+            var card = document.querySelector('#kanbanTablero .kanban__card[data-tarea-id="' + payload.tarea_id + '"]');
+            if (card) { card.remove(); refrescarConteos(); }
+            return;
+        }
+        // Restaurar: reinserta la tarjeta al final de su columna original.
+        var t = payload.tarjeta;
+        if (!t || !t.id || !t.columna_id) { return; }
+        if (document.querySelector('#kanbanTablero .kanban__card[data-tarea-id="' + t.id + '"]')) { return; } // dedup
+        var lista = document.querySelector('#kanbanTablero .kanban__lista[data-columna-id="' + t.columna_id + '"]');
+        if (!lista) { return; } // la columna no esta en pantalla
+        lista.insertAdjacentHTML("beforeend", tarjetaHtml(t));
+        refrescarConteos();
+    }
+
+    // Alta de comentario en vivo. Solo aplica si el modal de detalle de ESA
+    // MISMA tarjeta esta abierto (dtTareaActual + modal visible). Antepone el
+    // comentario (la lista va de mas reciente a mas antiguo); dedup por data-id.
+    function socketComentarioCreado(payload) {
+        if (!payload || !payload.id || !payload.tarea_id) { return; }
+        if (!detalleId || detalleId !== payload.proyecto_id) { return; }
+        if (dtTareaActual !== payload.tarea_id) { return; } // no es la tarjeta abierta
+        if (!$("#modalTareaDetalle").hasClass("show")) { return; } // modal no visible
+        var $lista = $("#dtComentarios");
+        if ($lista.find('li[data-id="' + payload.id + '"]').length) { return; } // dedup
+        $lista.find(".kanban-coment__vacio").remove();
+        $lista.prepend(comentarioHtml(payload));
+    }
+
+    function conectarSocketProyectos() {
+        var url = $vistaListado.data("ws");
+        // Sin URL o sin la libreria cargada: la app sigue funcionando (con recarga).
+        if (!url || typeof io === "undefined") { return; }
+        var socket = io(url, { transports: ["websocket", "polling"], withCredentials: true });
+        socket.on("connect", function () {
+            socketActivo = true;
+            socket.emit("unirse", "proyectos"); // entra a la sala del modulo
+        });
+        socket.on("disconnect", function () { socketActivo = false; });
+        socket.on("proyecto:creado", socketProyectoCreado);
+        socket.on("proyecto:actualizado", socketProyectoActualizado);
+        socket.on("proyecto:eliminado", socketProyectoEliminado);
+        socket.on("tarea:creada", socketTareaCreada); // detalle: alta de tarjeta en el Kanban
+        socket.on("tarea:movida", socketTareaMovida); // detalle: movimiento de tarjeta (drag & drop)
+        socket.on("tarea:completada", socketTareaCompletada); // detalle: completar/reabrir tarjeta
+        socket.on("tarea:archivada", socketTareaArchivada); // detalle: archivar/restaurar tarjeta
+        socket.on("columnas:reordenadas", socketColumnasReordenadas); // detalle: reorden de columnas
+        socket.on("columna:creada", socketColumnaCreada);             // detalle: alta de columna
+        socket.on("columna:eliminada", socketColumnaEliminada);       // detalle: borrado de columna
+        socket.on("columna:renombrada", socketColumnaRenombrada);     // detalle: renombrar columna
+        socket.on("comentario:creado", socketComentarioCreado);       // detalle: alta de comentario en una tarjeta
+    }
 
     // ===============================================================
     //  Opciones de los <select> / multiselect
@@ -500,6 +739,19 @@ $(function () {
         });
     }
 
+    // Aplica en el DOM el estado "completada" de una tarjeta (check verde + clase
+    // de la tarjeta), buscandola por su id. La usan el propio actor (respuesta
+    // del endpoint) y el alta en tiempo real. Idempotente.
+    function aplicarCompletadaTarjeta(tareaId, comp) {
+        var $card = $('#kanbanTablero .kanban__card[data-tarea-id="' + tareaId + '"]');
+        if (!$card.length) { return; }
+        var $btn = $card.find('[data-rol="completar"]');
+        $btn.toggleClass("is-completada", comp)
+            .attr("title", comp ? "Completada" : "Marcar como completada");
+        $btn.find("i").attr("class", "bi " + (comp ? "bi-check-circle-fill" : "bi-check-circle"));
+        $card.toggleClass("kanban__card--completada", comp);
+    }
+
     // Marca/desmarca una tarjeta como completada (check verde) y actualiza el
     // boton y el estilo de la tarjeta en el sitio, sin recargar el tablero.
     function completarTarea(tareaId, completar, $btn) {
@@ -509,11 +761,7 @@ $(function () {
             proyecto_id: detalleId, tarea_id: tareaId, completada: completar
         }).then(function (res) {
             if (res.ok && res.data) {
-                var comp = !!res.data.completada;
-                $btn.toggleClass("is-completada", comp)
-                    .attr("title", comp ? "Completada" : "Marcar como completada");
-                $btn.find("i").attr("class", "bi " + (comp ? "bi-check-circle-fill" : "bi-check-circle"));
-                $btn.closest(".kanban__card").toggleClass("kanban__card--completada", comp);
+                aplicarCompletadaTarjeta(tareaId, !!res.data.completada);
             } else {
                 AX.toast(res.mensaje || "No se pudo actualizar la tarea.", "error");
             }
@@ -590,7 +838,9 @@ $(function () {
         AX.enviarJSON("endpoints/kanban/crear_tarea.php", datos).then(function (res) {
             if (res.ok) {
                 modalTarea.cerrar();
-                cargarTablero(detalleId);   // recarga con la tarjeta ya posicionada
+                // La tarjeta aparece en vivo por socket (el propio actor la recibe);
+                // solo se recarga el tablero como respaldo si el socket no esta activo.
+                if (!socketActivo) { cargarTablero(detalleId); }
                 AX.toast("Tarea creada.", "exito");
             } else {
                 AX.errorFormulario("#formTareaError", res.mensaje || "No se pudo crear la tarea.");
@@ -853,7 +1103,7 @@ $(function () {
     // --- Comentarios (panel lateral del detalle) -------------------
     // HTML de un comentario: autor + fecha/hora + texto (todo escapado).
     function comentarioHtml(c) {
-        return '<li class="kanban-coment__item">' +
+        return '<li class="kanban-coment__item" data-id="' + AX.escaparHtml(c.id) + '">' +
                    '<div class="kanban-coment__meta">' +
                        '<span class="kanban-coment__autor">' + AX.escaparHtml(c.autor || "—") + "</span>" +
                        '<span class="kanban-coment__fecha">' + AX.formatearFechaHora(c.fecha) + "</span>" +
@@ -878,9 +1128,13 @@ $(function () {
             proyecto_id: detalleId, tarea_id: dtTareaActual, comentario: texto
         }).then(function (res) {
             if (res.ok && res.data) {
-                // Se agrega arriba (la lista va de mas reciente a mas antiguo).
-                $("#dtComentarios").find(".kanban-coment__vacio").remove();
-                $("#dtComentarios").prepend(comentarioHtml(res.data));
+                // El comentario aparece en vivo por socket (el propio actor lo
+                // recibe); solo se agrega aqui como respaldo si no hay socket. La
+                // lista va de mas reciente a mas antiguo (se antepone).
+                if (!socketActivo) {
+                    $("#dtComentarios").find(".kanban-coment__vacio").remove();
+                    $("#dtComentarios").prepend(comentarioHtml(res.data));
+                }
                 $("#dtNuevoComentario").val("");
                 $("#dtComentarioError").addClass("d-none").text("");
             } else {
@@ -906,16 +1160,6 @@ $(function () {
         if (v.trim().length > 100) { return "El nombre es demasiado largo (máximo 100)."; }
     }
 
-    // Reutiliza la respuesta de un endpoint de columna: recarga o avisa el error.
-    function trasCambioColumna(res, mensajeExito, mensajeError) {
-        if (res.ok) {
-            cargarTablero(detalleId);
-            AX.toast(mensajeExito, "exito");
-        } else {
-            AX.error(res.mensaje || mensajeError);
-        }
-    }
-
     function crearColumna() {
         if (!detalleId || typeof Swal === "undefined") { return; }
         Swal.fire({
@@ -932,7 +1176,14 @@ $(function () {
             AX.enviarJSON("endpoints/kanban/crear_columna.php", {
                 proyecto_id: detalleId, nombre: r.value.trim()
             }).then(function (res) {
-                trasCambioColumna(res, "Columna creada.", "No se pudo crear la columna.");
+                if (res.ok) {
+                    // La columna aparece en vivo por socket (el propio actor la
+                    // recibe); solo se recarga como respaldo si no hay socket.
+                    if (!socketActivo) { cargarTablero(detalleId); }
+                    AX.toast("Columna creada.", "exito");
+                } else {
+                    AX.error(res.mensaje || "No se pudo crear la columna.");
+                }
             }).catch(function () { AX.error("No se pudo crear la columna."); });
         });
     }
@@ -953,7 +1204,14 @@ $(function () {
             AX.enviarJSON("endpoints/kanban/renombrar_columna.php", {
                 proyecto_id: detalleId, columna_id: id, nombre: r.value.trim()
             }).then(function (res) {
-                trasCambioColumna(res, "Columna renombrada.", "No se pudo renombrar la columna.");
+                if (res.ok) {
+                    // El nuevo nombre aparece en vivo por socket (el propio actor
+                    // lo recibe); solo se recarga como respaldo si no hay socket.
+                    if (!socketActivo) { cargarTablero(detalleId); }
+                    AX.toast("Columna renombrada.", "exito");
+                } else {
+                    AX.error(res.mensaje || "No se pudo renombrar la columna.");
+                }
             }).catch(function () { AX.error("No se pudo renombrar la columna."); });
         });
     }
@@ -969,7 +1227,14 @@ $(function () {
             AX.enviarJSON("endpoints/kanban/eliminar_columna.php", {
                 proyecto_id: detalleId, columna_id: id
             }).then(function (res) {
-                trasCambioColumna(res, "Columna eliminada.", "No se pudo eliminar la columna.");
+                if (res.ok) {
+                    // La columna se quita en vivo por socket (el propio actor lo
+                    // recibe); solo se recarga como respaldo si no hay socket.
+                    if (!socketActivo) { cargarTablero(detalleId); }
+                    AX.toast("Columna eliminada.", "exito");
+                } else {
+                    AX.error(res.mensaje || "No se pudo eliminar la columna.");
+                }
             }).catch(function () { AX.error("No se pudo eliminar la columna."); });
         });
     }
@@ -991,7 +1256,9 @@ $(function () {
             proyecto_id: detalleId, tarea_id: tareaId, archivar: !!archivar
         }).then(function (res) {
             if (res.ok) {
-                cargarTablero(detalleId);              // el tablero refleja el cambio
+                // El tablero refleja el cambio en vivo por socket (el propio actor
+                // lo recibe); solo se recarga como respaldo si no hay socket.
+                if (!socketActivo) { cargarTablero(detalleId); }
                 AX.toast(archivar ? "Tarea archivada." : "Tarea restaurada.", "exito");
             } else {
                 AX.toast(res.mensaje || "No se pudo actualizar la tarea.", "error");
@@ -1085,8 +1352,12 @@ $(function () {
 
     function trasGuardar() {
         modalForm.cerrar();
-        if (detalleId) { abrirDetalle(detalleId); }
-        else { cargar(); }
+        // Si se guardo desde el detalle, se refresca el detalle: el socket solo
+        // actualiza la fila del listado, no la vista de detalle.
+        if (detalleId) { abrirDetalle(detalleId); return; }
+        // En el listado: alta y edicion aparecen en vivo por socket (el propio
+        // actor recibe el evento); solo se recarga como respaldo si no hay socket.
+        if (!socketActivo) { cargar(); }
     }
 
     function volverAlListado() {
@@ -1173,6 +1444,27 @@ $(function () {
         cambiarResponsable($(this).attr("data-usuario-id"), "quitar");
     });
 
+    // Eliminacion real del proyecto: confirma (advirtiendo del borrado de su
+    // tablero, tareas y recursos asociados) y recarga.
+    function eliminarRegistro(reg) {
+        AX.confirmar({
+            titulo: "Eliminar proyecto",
+            texto: 'Se eliminará "' + (reg.nombre_proyecto || "este proyecto") +
+                   '" junto con su tablero, tareas, equipo, hitos y notas. Esta acción no se puede deshacer.',
+            confirmar: "Eliminar", peligro: true
+        }).then(function (r) {
+            if (!r.isConfirmed) { return; }
+            AX.enviarJSON("endpoints/proyectos/eliminar.php", { id: reg.id }).then(function (res) {
+                if (res.ok) {
+                    AX.exito(res.mensaje || "Proyecto eliminado.");
+                    // La fila se quita en vivo por socket; recarga de respaldo si no hay socket.
+                    if (!socketActivo) { cargar(); }
+                }
+                else { AX.error(res.mensaje || "No se pudo eliminar el proyecto."); }
+            }).catch(function () { AX.error("No se pudo eliminar el proyecto."); });
+        });
+    }
+
     $tbody.on("click", "tr", function (e) {
         if (AX.esClicEnEnlace(e)) { return; }
         var $btn = $(e.target).closest("[data-accion]");
@@ -1183,7 +1475,10 @@ $(function () {
             else if (accion === "editar") {
                 if (reg) { abrirFormulario("editar", reg); }
                 else { AX.toast("No se pudieron leer los datos de la fila.", "error"); }
-            } else { AX.toast("Eliminación de proyectos: disponible próximamente.", "info"); }
+            } else if (accion === "eliminar") {
+                if (reg) { eliminarRegistro(reg); }
+                else { AX.toast("No se pudieron leer los datos de la fila.", "error"); }
+            }
             return;
         }
         if (reg) { abrirDetalle(reg.id); }
@@ -1194,6 +1489,7 @@ $(function () {
     msHosting  = AX.multiselect("#fpHosting", { vacio: "Sin hosting" });
     inicializarFiltrosDetalle();
     cargar();
+    conectarSocketProyectos(); // tiempo real: escucha altas/ediciones/borrados
 
     // Deep linking: si se llego con ?detalle=<uuid>, abrir ese detalle.
     var detallePedido = AX.detalleSolicitado();

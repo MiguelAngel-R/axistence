@@ -5,7 +5,8 @@
    de DETALLE (viewProducto) con pestañas + filtros.
    Espejo de assets/js/dominios.js.
 
-   NOTA: la accion "Eliminar" queda solo maquetada; no se implementa borrado.
+   NOTA: la accion "Eliminar" ejecuta un borrado real (confirmacion + endpoint
+   eliminar.php + auditoria ELIMINAR).
    ===================================================================== */
 
 $(function () {
@@ -326,6 +327,22 @@ $(function () {
     // La flecha "Volver" del detalle (data-ax-volver) regresa al listado.
     AX.vincularVolver(volverAlListado);
 
+    // Eliminacion real del hosting: confirma, llama al endpoint y recarga.
+    function eliminarRegistro(reg) {
+        var nombre = (reg.espacio_asignado || "este hosting") + (reg.vps ? " en " + reg.vps : "");
+        AX.confirmar({
+            titulo: "Eliminar hosting",
+            texto: 'Se eliminará el hosting "' + nombre + '" y sus relaciones con clientes y dominios. Esta acción no se puede deshacer.',
+            confirmar: "Eliminar", peligro: true
+        }).then(function (r) {
+            if (!r.isConfirmed) { return; }
+            AX.enviarJSON("endpoints/hosting/eliminar.php", { id: reg.id }).then(function (res) {
+                if (res.ok) { AX.exito(res.mensaje || "Hosting eliminado."); cargar(); }
+                else { AX.error(res.mensaje || "No se pudo eliminar el hosting."); }
+            }).catch(function () { AX.error("No se pudo eliminar el hosting."); });
+        });
+    }
+
     $tbody.on("click", "tr", function (e) {
         if (AX.esClicEnEnlace(e)) { return; }
         var $btn = $(e.target).closest("[data-accion]");
@@ -336,7 +353,10 @@ $(function () {
             else if (accion === "editar") {
                 if (reg) { abrirFormulario("editar", reg); }
                 else { AX.toast("No se pudieron leer los datos de la fila.", "error"); }
-            } else { AX.toast("Eliminación de hosting: disponible próximamente.", "info"); }
+            } else if (accion === "eliminar") {
+                if (reg) { eliminarRegistro(reg); }
+                else { AX.toast("No se pudieron leer los datos de la fila.", "error"); }
+            }
             return;
         }
         if (reg) { abrirDetalle(reg.id); }

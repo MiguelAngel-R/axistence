@@ -11,7 +11,8 @@
    Flujo de guardado: si hay archivo, primero se sube (multipart) a
    endpoints/ssl/subir.php; con la ruta devuelta se envia el resto por JSON.
 
-   NOTA: la accion "Eliminar" queda solo maquetada; no se implementa borrado.
+   NOTA: la accion "Eliminar" ejecuta un borrado real (confirmacion + endpoint
+   eliminar.php + auditoria ELIMINAR).
    ===================================================================== */
 
 $(function () {
@@ -19,11 +20,13 @@ $(function () {
 
     var estado = { pagina: 1, porPagina: 30, buscar: "" };
     var $tbody = $("#tbodySsl");
+    var $vistaListado = $("#vistaListado");
     var modalForm  = AX.modal("#modalSsl");
     var COLUMNAS = 6;
     var modo = "crear";
     var editandoId = null;
     var opciones = null;       // { dominios, proveedores, vps }
+    var socketActivo = false;   // true cuando el socket de tiempo real esta conectado
 
     function money(v) {
         var n = parseFloat(v);
@@ -90,6 +93,82 @@ $(function () {
         clearTimeout(temporizador);
         temporizador = setTimeout(function () { estado.buscar = valor.trim(); estado.pagina = 1; cargar(); }, 350);
     });
+
+    // ===============================================================
+    //  Tiempo real (Socket.IO)
+    //  El listado inserta en vivo la fila cuando se registra un certificado (por
+    //  cualquier usuario, incluido uno mismo), sin recargar ni volver a
+    //  consultar la BD: el evento ya trae la fila con los nombres de dominio,
+    //  proveedor y VPS resueltos. La escritura sigue yendo por HTTP al endpoint;
+    //  el socket solo REPARTE lo que PHP confirma tras guardar.
+    // ===============================================================
+
+    // Localiza la fila del listado cuyo registro embebido tiene ese id.
+    function filaPorId(id) {
+        return $tbody.find("tr").filter(function () {
+            var d = AX.datosFila(this);
+            return d && d.id === id;
+        });
+    }
+
+    // Alta: inserta la fila en su posicion alfabetica (el listado va ordenado por
+    // nombre de dominio). Solo aplica en la primera pagina y sin busqueda activa;
+    // en otro caso la fila aparecera al navegar/filtrar.
+    function socketSslCreado(ssl) {
+        if (!ssl || !ssl.id) { return; }
+        if (estado.pagina !== 1 || estado.buscar !== "") { return; }
+        if (filaPorId(ssl.id).length) { return; }            // evita duplicar
+        $tbody.find(".tabla-vacia").closest("tr").remove();  // quita el placeholder "vacio"
+        var $nueva = $(fila(ssl));
+        var nombre = ssl.dominio || "";
+        var insertado = false;
+        $tbody.find("tr").each(function () {
+            var d = AX.datosFila(this);
+            if (d && nombre.localeCompare(d.dominio || "", "es", { sensitivity: "base" }) < 0) {
+                $nueva.insertBefore(this);
+                insertado = true;
+                return false;
+            }
+        });
+        if (!insertado) { $tbody.append($nueva); }
+    }
+
+    // Edicion: reemplaza la fila si esta en pantalla. El evento trae la fila
+    // completa (misma forma que el listado, con dominio/proveedor/VPS resueltos),
+    // asi que se reemplaza tal cual sin fusionar.
+    function socketSslActualizado(ssl) {
+        if (!ssl || !ssl.id) { return; }
+        var $fila = filaPorId(ssl.id);
+        if (!$fila.length) { return; }
+        $fila.replaceWith(fila(ssl));
+    }
+
+    // Borrado: quita la fila; si la tabla queda vacia, muestra el placeholder.
+    function socketSslEliminado(payload) {
+        var id = payload && payload.id;
+        if (!id) { return; }
+        var $fila = filaPorId(id);
+        if (!$fila.length) { return; }
+        $fila.remove();
+        if (!$tbody.children().length) {
+            $tbody.html(filaVacia("No hay certificados registrados."));
+        }
+    }
+
+    function conectarSocketSsl() {
+        var url = $vistaListado.data("ws");
+        // Sin URL o sin la libreria cargada: la app sigue funcionando (con recarga).
+        if (!url || typeof io === "undefined") { return; }
+        var socket = io(url, { transports: ["websocket", "polling"], withCredentials: true });
+        socket.on("connect", function () {
+            socketActivo = true;
+            socket.emit("unirse", "ssl"); // entra a la sala del modulo
+        });
+        socket.on("disconnect", function () { socketActivo = false; });
+        socket.on("ssl:creado", socketSslCreado);
+        socket.on("ssl:actualizado", socketSslActualizado);
+        socket.on("ssl:eliminado", socketSslEliminado);
+    }
 
     // ===============================================================
     //  Opciones de los <select>
@@ -238,7 +317,9 @@ $(function () {
     // Tras guardar en el modal: cerrarlo y refrescar el listado.
     function trasGuardar() {
         modalForm.cerrar();
-        cargar();
+        // Alta y edicion aparecen en vivo por socket (el propio actor recibe el
+        // evento); solo se recarga como respaldo si el socket no esta activo.
+        if (!socketActivo) { cargar(); }
     }
 
     // Descarga segura del paquete del certificado (endpoint con permisos).
@@ -257,6 +338,27 @@ $(function () {
     // - 1 dia) y se muestra de solo lectura; ya no es manipulable por el usuario.
     var vigSsl = AX.vincularVigencia("#fsFechaRegistro", "#fsFechaVencimiento");
 
+    // Eliminacion real del certificado: confirma, borra (endpoint + paquete
+    // fisico) y recarga.
+    function eliminarRegistro(reg) {
+        AX.confirmar({
+            titulo: "Eliminar certificado",
+            texto: 'Se eliminará el certificado SSL del dominio "' + (reg.dominio || "seleccionado") +
+                   '" y su paquete de archivos. Esta acción no se puede deshacer.',
+            confirmar: "Eliminar", peligro: true
+        }).then(function (r) {
+            if (!r.isConfirmed) { return; }
+            AX.enviarJSON("endpoints/ssl/eliminar.php", { id: reg.id }).then(function (res) {
+                if (res.ok) {
+                    AX.exito(res.mensaje || "Certificado eliminado.");
+                    // La fila se quita en vivo por socket; recarga de respaldo si no hay socket.
+                    if (!socketActivo) { cargar(); }
+                }
+                else { AX.error(res.mensaje || "No se pudo eliminar el certificado."); }
+            }).catch(function () { AX.error("No se pudo eliminar el certificado."); });
+        });
+    }
+
     $tbody.on("click", "tr", function (e) {
         if (AX.esClicEnEnlace(e)) { return; } // deja navegar los enlaces cruzados
         var $btn = $(e.target).closest("[data-accion]");
@@ -268,10 +370,12 @@ $(function () {
         } else if (accion === "editar") {
             if (reg) { abrirFormulario("editar", reg); }
             else { AX.toast("No se pudieron leer los datos de la fila.", "error"); }
-        } else { // eliminar (solo maquetado)
-            AX.toast("Eliminación de certificados: disponible próximamente.", "info");
+        } else if (accion === "eliminar") {
+            if (reg) { eliminarRegistro(reg); }
+            else { AX.toast("No se pudieron leer los datos de la fila.", "error"); }
         }
     });
 
     cargar();
+    conectarSocketSsl(); // tiempo real: escucha altas
 });

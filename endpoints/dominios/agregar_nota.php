@@ -46,4 +46,24 @@ $id = $stmt->fetchColumn();
 
 auditar_en_dominio($dominioId, 'Agrego una nota a ' . $dominio, ['nota' => $nota, 'criticidad' => $criticidad]);
 
+// --- Tiempo real ----------------------------------------------------
+// Avisa a los navegadores que tienen abierto el DETALLE de este dominio para que
+// agreguen la fila de la nota sin recargar. Se reconsulta la nota recien creada
+// para resolver el AUTOR (nombre, viene de un JOIN) y la FECHA (la genera la BD),
+// que no estan en las variables del endpoint. Es una lectura por clave primaria.
+// El evento viaja con dominio_id para que cada navegador sepa si le corresponde.
+// Se emite SOLO tras la insercion y la auditoria (fire-and-forget).
+$stmt = $pdo->prepare(
+    'SELECT n.id, n.nota, n.criticidad, n.fecha, u.nombre_completo AS autor
+       FROM public.dominio_notas n
+       LEFT JOIN public.usuarios_internos u ON u.id = n.autor_id
+      WHERE n.id = :id'
+);
+$stmt->execute([':id' => $id]);
+$notaFila = $stmt->fetch();
+if ($notaFila) {
+    $notaFila['dominio_id'] = $dominioId;
+    notificar_socket('dominios', 'nota:creada', $notaFila);
+}
+
 json_ok(['id' => $id], 'Nota agregada correctamente');

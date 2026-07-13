@@ -122,6 +122,21 @@ if ($cambioColumna) {
     );
 }
 
+// --- Tiempo real ----------------------------------------------------
+// Avisa a los navegadores que tienen abierto el tablero de este proyecto para
+// que reflejen el movimiento sin recargar: mueven la tarjeta a la columna
+// destino y reordenan esa columna segun 'orden'. El evento viaja con proyecto_id
+// (para filtrar por detalle), la tarjeta movida, la columna destino y el nuevo
+// orden de esa columna. Es idempotente: aplicar el mismo orden deja el mismo
+// estado (el propio actor, que ya movio en su DOM, lo reaplica sin efecto). Se
+// emite SOLO tras el commit y la auditoria (fire-and-forget).
+notificar_socket('proyectos', 'tarea:movida', [
+    'proyecto_id' => $proyectoId,
+    'tarea_id'    => $tareaId,
+    'columna_id'  => $columnaId,
+    'orden'       => $orden,
+]);
+
 json_ok([
     'tarea_id'   => $tareaId,
     'columna_id' => $columnaId,

@@ -170,8 +170,8 @@ $otros = $stmt->fetchAll();
 
 // --- Personas de contacto del cliente ------------------------------
 $stmt = $pdo->prepare(
-    'SELECT id, nombre_completo, cargo_puesto, email, telefono_movil,
-            telefono_fijo, es_contacto_principal
+    'SELECT id, nombres, apellidos, nombre_completo, cargo_puesto, email,
+            telefono_movil, telefono_fijo, es_contacto_principal
        FROM public.clientes_personas_contacto
       WHERE cliente_id = :id
       ORDER BY es_contacto_principal DESC, nombre_completo ASC'

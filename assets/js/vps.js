@@ -8,8 +8,8 @@
      muestra toda la informacion relacionada del VPS.
    Espejo de assets/js/proveedores.js (mismo patron).
 
-   NOTA: la accion "Eliminar" queda solo maquetada (boton en la fila);
-   por regla de negocio de esta fase NO se implementa borrado.
+   NOTA: la accion "Eliminar" ejecuta un borrado real (confirmacion + endpoint
+   eliminar.php + auditoria ELIMINAR); 409 si tiene hosting asociado.
    ===================================================================== */
 
 $(function () {
@@ -884,6 +884,23 @@ $(function () {
     // La flecha "Volver" del detalle (data-ax-volver) regresa al listado.
     AX.vincularVolver(volverAlListado);
 
+    // Eliminacion real del VPS: confirma, llama al endpoint y recarga.
+    // El backend responde 409 si el VPS tiene hosting asociado.
+    function eliminarRegistro(reg) {
+        var nombre = reg.label || reg.referencia_vps || "este VPS";
+        AX.confirmar({
+            titulo: "Eliminar VPS",
+            texto: 'Se eliminará "' + nombre + '" junto con su historial, notas, credenciales SSH y virtual hosts. Esta acción no se puede deshacer.',
+            confirmar: "Eliminar", peligro: true
+        }).then(function (r) {
+            if (!r.isConfirmed) { return; }
+            AX.enviarJSON("endpoints/vps/eliminar.php", { id: reg.id }).then(function (res) {
+                if (res.ok) { AX.exito(res.mensaje || "VPS eliminado."); cargar(); }
+                else { AX.error(res.mensaje || "No se pudo eliminar el VPS."); }
+            }).catch(function () { AX.error("No se pudo eliminar el VPS."); });
+        });
+    }
+
     // Clic en la tabla: los botones de accion mandan; el resto de la fila abre el detalle.
     $tbody.on("click", "tr", function (e) {
         // Si se pulso un enlace cruzado, dejar que navegue (no abrir el detalle propio).
@@ -897,8 +914,9 @@ $(function () {
             } else if (accion === "editar") {
                 if (reg) { abrirFormulario("editar", reg); }
                 else { AX.toast("No se pudieron leer los datos de la fila.", "error"); }
-            } else { // eliminar (solo maquetado)
-                AX.toast("Eliminación de VPS: disponible próximamente.", "info");
+            } else if (accion === "eliminar") {
+                if (reg) { eliminarRegistro(reg); }
+                else { AX.toast("No se pudieron leer los datos de la fila.", "error"); }
             }
             return;
         }

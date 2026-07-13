@@ -12,6 +12,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config/bootstrap.php';
 require_once __DIR__ . '/_comun.php';
+require_once __DIR__ . '/_fila_socket.php';
 
 solo_metodo('POST');
 requiere_permiso('Proyectos', 'crear');
@@ -119,5 +120,16 @@ registrar_auditoria(
         'hosting'                => $rels['hosting'],
     ]
 );
+
+// --- Tiempo real ----------------------------------------------------
+// Se avisa a los navegadores que tienen el listado abierto para que inserten la
+// fila sin recargar. La fila se reconsulta con la MISMA forma que el listado
+// (helper compartido: resuelve el cliente y los recursos N:N), asi el navegador
+// no reconsulta la BD. Se emite SOLO tras el commit y la auditoria
+// (fire-and-forget: nunca rompe la operacion).
+$filaProy = fila_proyecto_socket($pdo, (string)$id);
+if ($filaProy) {
+    notificar_socket('proyectos', 'proyecto:creado', $filaProy);
+}
 
 json_ok(['id' => $id], 'Proyecto creado correctamente');

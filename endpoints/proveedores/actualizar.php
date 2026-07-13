@@ -129,4 +129,17 @@ registrar_auditoria(
     ]
 );
 
+// --- Tiempo real ----------------------------------------------------
+// Se avisa a los navegadores que tienen el listado abierto para que reemplacen
+// la fila sin recargar. El evento viaja con los datos ya actualizados (incluidos
+// los tipos); el navegador los fusiona sobre la fila previa, asi que conserva lo
+// que no viaja (p. ej. created_at) sin reconsultar la BD. Se emite SOLO tras el
+// commit y la auditoria.
+notificar_socket('proveedores', 'proveedor:actualizado', [
+    'id'               => $id,
+    'nombre_proveedor' => $nombre,
+    'sitio_web'        => $sitioWebBd,
+    'tipos'            => $tipos,
+]);
+
 json_ok(['id' => $id], 'Proveedor actualizado correctamente');

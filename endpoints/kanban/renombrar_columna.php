@@ -64,4 +64,15 @@ registrar_auditoria(
     ['nombre' => $nombre]
 );
 
+// --- Tiempo real ----------------------------------------------------
+// Avisa a los navegadores que tienen abierto el tablero de este proyecto para
+// que actualicen el nombre de la columna sin recargar. Viajan proyecto_id (para
+// filtrar por detalle), columna_id y el nuevo nombre. Se emite SOLO tras el
+// cambio real y la auditoria (no en el atajo "Sin cambios"). Fire-and-forget.
+notificar_socket('proyectos', 'columna:renombrada', [
+    'proyecto_id' => $proyectoId,
+    'columna_id'  => $columnaId,
+    'nombre'      => $nombre,
+]);
+
 json_ok(['id' => $columnaId, 'nombre' => $nombre], 'Columna renombrada');
