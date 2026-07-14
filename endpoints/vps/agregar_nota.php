@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config/bootstrap.php';
 require_once __DIR__ . '/_detalle.php';
+require_once __DIR__ . '/_fila_nota.php';
 
 solo_metodo('POST');
 requiere_permiso('VPS', 'editar');
@@ -46,5 +47,16 @@ $id = $stmt->fetchColumn();
 
 auditar_en_vps($vpsId, 'Agrego una nota (' . $criticidad . ') al servidor ' . $ref,
     ['nota' => $nota, 'criticidad' => $criticidad]);
+
+// --- Tiempo real ----------------------------------------------------
+// Como el Inventario/Virtual Hosts, la Nota NO tiene modulo propio: solo impacta
+// la pestaña Notas del detalle del VPS. Se reconsulta la fila con la forma exacta
+// que pinta ese tab (helper compartido: resuelve el autor) y se reparte UN evento
+// a la sala 'vps' (fire-and-forget). Cada navegador decide si le corresponde por
+// el vps_id. (El alta ademas ya salio en el Historial via auditar_en_vps.)
+$filaNota = fila_nota_socket($pdo, (string)$id);
+if ($filaNota) {
+    notificar_socket('vps', 'nota_vps:creado', $filaNota);
+}
 
 json_ok(['id' => $id], 'Nota agregada correctamente');

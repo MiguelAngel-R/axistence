@@ -7,6 +7,8 @@ declare(strict_types=1);
 //  $tipoAccion debe ser uno del enum tipo_accion_auditoria:
 //    CREAR | MODIFICAR | ELIMINAR | AUTENTICACION | DESCARGA_SEGURA | CAMBIO_ESTADO
 //  Un fallo al auditar nunca debe romper el flujo principal.
+//  Devuelve el id del log insertado (para quien quiera reemitirlo en tiempo
+//  real), o null si el registro fallo. Los llamadores que lo ignoran no cambian.
 // =====================================================================
 
 function registrar_auditoria(
@@ -16,7 +18,7 @@ function registrar_auditoria(
     ?string $registroId = null,
     ?array $datosAnteriores = null,
     ?array $datosNuevos = null
-): void {
+): ?string {
     try {
         $pdo = Database::get();
         $u   = usuario_actual();
@@ -26,9 +28,11 @@ function registrar_auditoria(
                      datos_anteriores, datos_nuevos, direccion_ip, user_agent)
                 VALUES
                     (:usuario_id, :tipo_accion, :modulo, :registro_id, :descripcion,
-                     :datos_ant, :datos_nue, :ip, :ua)';
+                     :datos_ant, :datos_nue, :ip, :ua)
+                RETURNING id';
 
-        $pdo->prepare($sql)->execute([
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([
             ':usuario_id'  => $u['id'] ?? null,
             ':tipo_accion' => $tipoAccion,
             ':modulo'      => $modulo,
@@ -39,8 +43,11 @@ function registrar_auditoria(
             ':ip'          => $_SERVER['REMOTE_ADDR'] ?? null,
             ':ua'          => $_SERVER['HTTP_USER_AGENT'] ?? null,
         ]);
+        $id = $stmt->fetchColumn();
+        return $id !== false ? (string)$id : null;
     } catch (Throwable $e) {
         // No interrumpir la operacion principal por un fallo de auditoria.
         error_log('[AXISTENCE] Fallo al registrar auditoria: ' . $e->getMessage());
+        return null;
     }
 }

@@ -58,4 +58,8 @@ registrar_auditoria(
     null
 );
 
+// --- Tiempo real ----------------------------------------------------
+// Se avisa a los navegadores para que quiten la fila sin recargar.
+notificar_socket('vps', 'vps:eliminado', ['id' => $id]);
+
 json_ok(['id' => $id], 'VPS eliminado correctamente');

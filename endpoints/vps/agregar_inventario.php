@@ -12,6 +12,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config/bootstrap.php';
 require_once __DIR__ . '/_detalle.php';
+require_once __DIR__ . '/_fila_inventario.php';
 
 solo_metodo('POST');
 requiere_permiso('VPS', 'editar');
@@ -65,5 +66,16 @@ $id = $stmt->fetchColumn();
 
 auditar_en_vps($vpsId, 'Agrego al inventario logico: ' . $software . ' (' . $tipoEvento . ') en ' . $ref,
     ['tipo_evento' => $tipoEvento, 'software_componente' => $software, 'version' => $version]);
+
+// --- Tiempo real ----------------------------------------------------
+// El inventario logico NO tiene modulo propio: solo impacta la pestaña
+// Inventario del detalle del VPS. Se reconsulta la fila con la forma exacta que
+// pinta ese tab (helper compartido: resuelve el responsable) y se reparte UN
+// evento a la sala 'vps' (fire-and-forget, nunca rompe la operacion). Cada
+// navegador decide si le corresponde por el vps_id que viaja en la fila.
+$filaInv = fila_inventario_socket($pdo, (string)$id);
+if ($filaInv) {
+    notificar_socket('vps', 'inventario_vps:creado', $filaInv);
+}
 
 json_ok(['id' => $id], 'Registro agregado al inventario logico');

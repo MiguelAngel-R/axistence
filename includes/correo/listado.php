@@ -196,13 +196,12 @@ require __DIR__ . '/../layout/app_header.php';
     </div>
 </div>
 
-<!-- Modal para asignar una extension de espacio a una cuenta (MAQUETA:
-     todavia no esta programada la asignacion; solo el boton + este modal). -->
+<!-- Modal para asignar un complemento a una licencia -->
 <div class="modal fade" id="modalExtension" tabindex="-1" aria-hidden="true" aria-labelledby="formExtensionTitulo">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h2 class="modal-title h5" id="formExtensionTitulo">Asignar extensión de espacio</h2>
+                <h2 class="modal-title h5" id="formExtensionTitulo">Asignar complemento</h2>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
             </div>
             <div class="modal-body">
@@ -218,16 +217,26 @@ require __DIR__ . '/../layout/app_header.php';
                         </div>
 
                         <div class="col-12">
-                            <label class="form-label" for="exCuenta">Cuenta *</label>
-                            <select class="form-select" id="exCuenta" required disabled>
-                                <option value="">Seleccione primero una licencia…</option>
-                            </select>
+                            <label class="form-label" for="exNombre">Tipo de complemento *</label>
+                            <input class="form-control" type="text" id="exNombre" maxlength="150"
+                                   placeholder="Ej: Almacenamiento adicional" required>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label" for="exCantidad">Cantidad de cuentas *</label>
+                            <input class="form-control" type="number" id="exCantidad" min="1" step="1"
+                                   placeholder="Ej: 5" required>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label" for="exValor">Valor *</label>
+                            <input class="form-control" type="number" id="exValor" min="0" step="0.01"
+                                   placeholder="Ej: 20000" required>
                         </div>
 
                         <div class="col-12">
-                            <label class="form-label" for="exCantidad">Cantidad de extensión de espacio (GB) *</label>
-                            <input class="form-control" type="number" id="exCantidad" min="1" step="1"
-                                   placeholder="Ej: 5" required>
+                            <label class="form-label" for="exFechaInicio">Fecha de inicio *</label>
+                            <input class="form-control" type="date" id="exFechaInicio" required>
                         </div>
                     </div>
                 </form>
@@ -235,8 +244,61 @@ require __DIR__ . '/../layout/app_header.php';
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
                 <button type="button" class="btn btn-primary btn-sm" id="btnGuardarExtension">
-                    <i class="bi bi-check-lg" aria-hidden="true"></i> Asignar extensión
+                    <i class="bi bi-check-lg" aria-hidden="true"></i> Asignar complemento
                 </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal para asignar un complemento a las cuentas (buzones) de su licencia.
+     Se abre al hacer click en una fila del tab "Complementos". Muestra la info
+     del complemento, un select con las cuentas de la licencia + boton para
+     asignar, y debajo la lista de cuentas que ya lo tienen. -->
+<div class="modal fade" id="modalComplementoCuentas" tabindex="-1" aria-hidden="true" aria-labelledby="ccuTitulo">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title h5" id="ccuTitulo">Complemento</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <div id="formComplementoCuentaError" class="alert alert-danger d-none" role="alert"></div>
+
+                <!-- Datos del complemento seleccionado -->
+                <dl class="detalle__grid mb-3">
+                    <div><dt>Licencia</dt><dd id="ccuLicencia">—</dd></div>
+                    <div><dt>Cantidad de cuentas</dt><dd id="ccuCupo">—</dd></div>
+                    <div><dt>Valor</dt><dd id="ccuValor">—</dd></div>
+                    <div><dt>Fecha de inicio</dt><dd id="ccuFecha">—</dd></div>
+                </dl>
+
+                <!-- Asignar el complemento a una cuenta de la licencia -->
+                <label class="form-label" for="ccuCuenta">Cuenta de la licencia</label>
+                <div class="lic-alta mb-2">
+                    <div class="lic-alta__campo lic-alta__campo--tipo">
+                        <select class="form-select" id="ccuCuenta" disabled>
+                            <option value="">Cargando…</option>
+                        </select>
+                    </div>
+                    <button type="button" class="btn btn-primary btn-sm lic-alta__btn" id="btnAsignarComplementoCuenta">
+                        <i class="bi bi-plus-lg" aria-hidden="true"></i> Asignar
+                    </button>
+                </div>
+                <p class="text-muted small mb-3" id="ccuInfo"></p>
+
+                <!-- Cuentas que ya tienen este complemento -->
+                <div class="tabla-wrap">
+                    <table class="table tabla">
+                        <thead>
+                            <tr><th>Cuenta</th><th>Correo</th><th>Tipo</th><th>Asignada</th></tr>
+                        </thead>
+                        <tbody id="ccuAsignadas"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cerrar</button>
             </div>
         </div>
     </div>

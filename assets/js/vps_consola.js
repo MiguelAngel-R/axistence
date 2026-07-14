@@ -16,6 +16,12 @@
     var socketVpsId = "";
     var $cont, $sel, $btnCon, $btnDes, $estado, $sesiones, $comandos;
     var $sug, $sugLista;
+    var $btnInstr, $instrLista;
+
+    // Catalogo de instrucciones rapidas (comandos configurables). Global, no
+    // depende del VPS. Se (re)carga al abrir el modal y tras cada alta/edicion/
+    // borrado para reflejar los cambios.
+    var instrGrupos = null;   // [{categoria, items:[{id,titulo,descripcion,comando}]}]
 
     // Autocompletar: historial cargado del VPS + linea que se esta tecleando
     // (reconstruida heuristicamente) + estado del panel de sugerencias.
@@ -30,8 +36,12 @@
         var el = document.getElementById("vistaDetalle");
         return el ? (el.getAttribute("data-vps-id") || "") : "";
     }
+    // URL BASE del servidor unico de websockets. La consola vive en el
+    // namespace "/consola" (se agrega al abrir el socket); los listados usan
+    // el namespace por defecto del mismo server/puerto.
     function wsUrl() {
-        return ($cont && $cont.data("ws")) || "http://127.0.0.1:3001";
+        var base = ($cont && $cont.data("ws")) || "http://127.0.0.1:3002";
+        return String(base).replace(/\/+$/, ""); // sin barra final -> evita "//consola"
     }
     function setEstado(txt, estado) {
         $estado.text(txt).attr("data-estado", estado);
@@ -299,6 +309,172 @@
         });
     }
 
+    // --- Instrucciones rapidas (catalogo configurable de comandos) ----
+    var instrPorId = {};   // id -> {id, categoria, titulo, descripcion, comando}
+    var instrEditId = "";  // id en edicion ("" = alta); lo usa guardarInstr
+
+    function modalInstr() {
+        return bootstrap.Modal.getOrCreateInstance(document.getElementById("modalInstrucciones"));
+    }
+    // Alterna entre la vista LISTA y la vista FORMULARIO dentro del modal.
+    function modoFormInstr(esForm) {
+        $("#instrVista").prop("hidden", esForm);
+        $("#instrForm").prop("hidden", !esForm);
+        $('#modalInstrucciones [data-rol="pie-lista"]').prop("hidden", esForm);
+        $('#modalInstrucciones [data-rol="pie-form"]').prop("hidden", !esForm);
+    }
+
+    // Pide el catalogo al backend, lo cachea y ejecuta cb() al terminar.
+    function cargarInstr(cb) {
+        $.ajax({
+            url: "endpoints/vps/consola_instrucciones.php",
+            method: "GET", dataType: "json",
+            xhrFields: { withCredentials: true }
+        }).done(function (res) {
+            instrGrupos = (res && res.ok && res.data && res.data.grupos) || [];
+            // Mapa id->item (con su categoria) para poder editar.
+            instrPorId = {};
+            instrGrupos.forEach(function (g) {
+                (g.items || []).forEach(function (it) {
+                    instrPorId[it.id] = {
+                        id: it.id, categoria: g.categoria,
+                        titulo: it.titulo, descripcion: it.descripcion, comando: it.comando
+                    };
+                });
+            });
+            if (cb) { cb(true); }
+        }).fail(function () {
+            if (cb) { cb(false); }
+        });
+    }
+
+    // Pinta el catalogo agrupado por categoria, con acciones por instruccion.
+    function renderInstr() {
+        $instrLista.empty();
+        if (!instrGrupos || !instrGrupos.length) {
+            $instrLista.html('<div class="consola__vacio">Aún no hay instrucciones. Crea la primera con «Nueva instrucción».</div>');
+            return;
+        }
+        instrGrupos.forEach(function (g) {
+            $instrLista.append($('<h3 class="consola__instr-cat">').text(g.categoria));
+            (g.items || []).forEach(function (it) {
+                var $acc = $('<span class="consola__instr-acc">').append(
+                    $('<button type="button" class="btn btn-icon btn-sm" data-accion="ejecutar" title="Ejecutar en la terminal"><i class="bi bi-play-fill" aria-hidden="true"></i></button>').attr("data-cmd", it.comando),
+                    $('<button type="button" class="btn btn-icon btn-sm" data-accion="editar" title="Editar"><i class="bi bi-pencil" aria-hidden="true"></i></button>').attr("data-id", it.id),
+                    $('<button type="button" class="btn btn-icon btn-sm" data-accion="eliminar" title="Eliminar"><i class="bi bi-trash" aria-hidden="true"></i></button>').attr("data-id", it.id)
+                );
+                var $li = $('<div class="consola__instr-item">').append(
+                    $('<span class="consola__instr-info">').append(
+                        $('<b>').text(it.titulo),
+                        it.descripcion ? $('<small>').text(it.descripcion) : null,
+                        $('<code>').text(it.comando)
+                    ),
+                    $acc
+                );
+                $instrLista.append($li);
+            });
+        });
+    }
+
+    // Abre el modal en modo LISTA y (re)carga el catalogo.
+    function abrirModalInstr() {
+        modoFormInstr(false);
+        modalInstr().show();
+        $instrLista.html('<div class="consola__cargando">Cargando…</div>');
+        cargarInstr(function (ok) {
+            if (ok) { renderInstr(); }
+            else { $instrLista.html('<div class="consola__vacio">No se pudo cargar el catálogo.</div>'); }
+        });
+    }
+
+    // Ejecuta la instruccion: la envia al shell como si se tecleara + Enter.
+    // El server Node la registra en el historial igual que cualquier comando.
+    function ejecutarInstr(cmd) {
+        cmd = (cmd || "").trim();
+        if (!cmd) { return; }
+        if (!socket || !conectado) { AX.toast && AX.toast("Conéctate a la consola para ejecutar."); return; }
+        socket.emit("input", cmd + "\r");
+        recordarComando(cmd);          // que aparezca ya en las sugerencias
+        modalInstr().hide();
+        if (term) { term.focus(); }
+        if (AX && AX.toast) { AX.toast("Ejecutando: " + cmd); }
+    }
+
+    // Muestra el formulario. item = objeto para editar, o null para alta.
+    function mostrarFormInstr(item) {
+        instrEditId = item ? item.id : "";
+        $("#instrFormError").addClass("d-none").text("");
+        // Datalist con las categorias ya existentes (para reutilizarlas).
+        var $dl = $("#instrCategorias").empty();
+        (instrGrupos || []).forEach(function (g) { $dl.append($("<option>").val(g.categoria)); });
+        $("#instrCategoria").val(item ? item.categoria : "");
+        $("#instrTitulo").val(item ? item.titulo : "");
+        $("#instrDescripcion").val(item ? (item.descripcion || "") : "");
+        $("#instrComando").val(item ? item.comando : "");
+        modoFormInstr(true);
+        $("#instrCategoria").trigger("focus");
+    }
+
+    // Guarda el formulario (alta o edicion) contra el backend.
+    function guardarInstr() {
+        var payload = {
+            categoria: $("#instrCategoria").val().trim(),
+            titulo: $("#instrTitulo").val().trim(),
+            descripcion: $("#instrDescripcion").val().trim(),
+            comando: $("#instrComando").val().trim()
+        };
+        if (instrEditId) { payload.id = instrEditId; }
+        if (!payload.categoria || !payload.titulo || !payload.comando) {
+            $("#instrFormError").text("Categoría, título y comando son obligatorios.").removeClass("d-none");
+            return;
+        }
+        var $btn = $("#instrGuardar").prop("disabled", true);
+        $.ajax({
+            url: "endpoints/vps/consola_instrucciones.php",
+            method: "POST", contentType: "application/json", dataType: "json",
+            xhrFields: { withCredentials: true },
+            data: JSON.stringify(payload)
+        }).done(function (res) {
+            if (res && res.ok) {
+                if (AX && AX.toast) { AX.toast(instrEditId ? "Instrucción actualizada." : "Instrucción creada."); }
+                cargarInstr(function () { renderInstr(); modoFormInstr(false); });
+            } else {
+                $("#instrFormError").text((res && res.mensaje) || "No se pudo guardar.").removeClass("d-none");
+            }
+            $btn.prop("disabled", false);
+        }).fail(function (xhr) {
+            $("#instrFormError").text((xhr.responseJSON && xhr.responseJSON.mensaje) || "No se pudo guardar.").removeClass("d-none");
+            $btn.prop("disabled", false);
+        });
+    }
+
+    // Elimina una instruccion (con confirmacion) y refresca la lista.
+    function eliminarInstr(id) {
+        var it = instrPorId[id];
+        AX.confirmar({
+            titulo: "Eliminar instrucción",
+            texto: "¿Eliminar «" + ((it && it.titulo) || "esta instrucción") + "» del catálogo?",
+            confirmar: "Eliminar", peligro: true
+        }).then(function (r) {
+            if (!r.isConfirmed) { return; }
+            $.ajax({
+                url: "endpoints/vps/consola_instrucciones.php",
+                method: "DELETE", contentType: "application/json", dataType: "json",
+                xhrFields: { withCredentials: true },
+                data: JSON.stringify({ id: id })
+            }).done(function (res) {
+                if (res && res.ok) {
+                    if (AX && AX.toast) { AX.toast("Instrucción eliminada."); }
+                    cargarInstr(function () { renderInstr(); });
+                } else {
+                    AX.error((res && res.mensaje) || "No se pudo eliminar.");
+                }
+            }).fail(function (xhr) {
+                AX.error((xhr.responseJSON && xhr.responseJSON.mensaje) || "No se pudo eliminar.");
+            });
+        });
+    }
+
     // --- Conexion ----------------------------------------------------
     function conectar() {
         if (conectado) { return; }
@@ -337,7 +513,7 @@
         socketVpsId = vpsId();
         setEstado("Conectando…", "wait");
 
-        socket = io(wsUrl(), {
+        socket = io(wsUrl() + "/consola", {
             auth: { token: token, cols: term ? term.cols : 80, rows: term ? term.rows : 24 },
             reconnection: false,
             transports: ["websocket", "polling"]
@@ -395,6 +571,20 @@
     }
 
     // --- Historial ---------------------------------------------------
+    // Construye el <li> de una sesion. Lo usan cargarHistorial (carga inicial) y
+    // los eventos de socket (apertura/cierre en vivo). El icono refleja el estado:
+    // ● activa (verde), ⚠ error, ○ cerrada.
+    function filaSesion(s) {
+        var ico = s.estado === "activa" ? "●" : (s.estado === "error" ? "⚠" : "○");
+        return $('<li class="consola__sesion">').attr("data-id", s.id).append(
+            $('<span class="consola__sesion-ico">').attr("data-estado", s.estado).text(ico),
+            $('<span class="consola__sesion-info">').append(
+                $("<b>").text(s.usuario || "—"),
+                $("<small>").text(AX.formatearFecha(s.inicio) + " · " + (s.total_comandos || 0) + " cmd")
+            )
+        );
+    }
+
     function cargarHistorial() {
         var id = vpsId();
         if (!id) { return; }
@@ -411,18 +601,55 @@
                 return;
             }
             $sesiones.empty();
-            arr.forEach(function (s) {
-                var ico = s.estado === "activa" ? "●" : (s.estado === "error" ? "⚠" : "○");
-                var $li = $('<li class="consola__sesion">').attr("data-id", s.id).append(
-                    $('<span class="consola__sesion-ico">').attr("data-estado", s.estado).text(ico),
-                    $('<span class="consola__sesion-info">').append(
-                        $("<b>").text(s.usuario || "—"),
-                        $("<small>").text(AX.formatearFecha(s.inicio) + " · " + (s.total_comandos || 0) + " cmd")
-                    )
-                );
-                $sesiones.append($li);
-            });
+            arr.forEach(function (s) { $sesiones.append(filaSesion(s)); });
         });
+    }
+
+    // --- Tiempo real del Historial (Socket.IO) -----------------------
+    //  El panel de sesiones se actualiza en vivo: cuando ALGUIEN (uno mismo u
+    //  otro operador) abre una consola SSH a este VPS aparece como activa (punto
+    //  verde y quien esta conectado), y al terminar cambia a cerrada/error. La
+    //  apertura/cierre real la persiste PHP (consola_sesion_abrir/cerrar.php,
+    //  llamados por el server Node); esos endpoints emiten el evento a la sala
+    //  'vps' y aqui solo se PINTA. Se usa el namespace por defecto del server
+    //  unico (los listados), independiente del socket SSH del namespace /consola.
+    var socketHist = null;
+
+    function sesionPorId(id) {
+        return $sesiones.find(".consola__sesion").filter(function () {
+            return $(this).attr("data-id") === id;
+        });
+    }
+
+    // Apertura: inserta la sesion al principio (el historial va por inicio DESC).
+    // Si ya estaba (p. ej. el propio actor tras un refresco), la reemplaza.
+    function sesionAbierta(s) {
+        if (!s || !s.id || !s.vps_id || s.vps_id !== vpsId()) { return; }
+        var $existente = sesionPorId(s.id);
+        if ($existente.length) { $existente.replaceWith(filaSesion(s)); return; }
+        $sesiones.find(".consola__vacio").remove(); // quita el "Sin sesiones."
+        $sesiones.prepend(filaSesion(s));
+    }
+
+    // Cierre: cambia el punto de la sesion (verde -> cerrada/error) en sitio,
+    // conservando la seleccion si el usuario tenia esa sesion abierta.
+    function sesionCerrada(s) {
+        if (!s || !s.id || !s.vps_id || s.vps_id !== vpsId()) { return; }
+        var $li = sesionPorId(s.id);
+        if (!$li.length) { return; }
+        var $nueva = filaSesion(s);
+        if ($li.hasClass("is-active")) { $nueva.addClass("is-active"); }
+        $li.replaceWith($nueva);
+    }
+
+    function conectarSocketHistorial() {
+        if (socketHist || typeof io === "undefined") { return; }
+        var base = wsUrl();
+        if (!base) { return; }
+        socketHist = io(base, { transports: ["websocket", "polling"], withCredentials: true });
+        socketHist.on("connect", function () { socketHist.emit("unirse", "vps"); });
+        socketHist.on("sesion_vps:abierta", sesionAbierta);
+        socketHist.on("sesion_vps:cerrada", sesionCerrada);
     }
 
     function verComandos(sesionId) {
@@ -460,10 +687,26 @@
         $comandos = $("#consolaComandos");
         $sug = $("#consolaSugerencias");
         $sugLista = $("#consolaSugLista");
+        $btnInstr = $("#consolaInstrucciones");
+        $instrLista = $("#instrLista");
 
         $btnCon.on("click", conectar);
         $btnDes.on("click", desconectar);
+        $btnInstr.on("click", abrirModalInstr);
         $("#consolaRefrescar").on("click", cargarHistorial);
+
+        // Acciones sobre cada instruccion del modal (ejecutar / editar / eliminar).
+        $instrLista.on("click", "[data-accion]", function () {
+            var accion = $(this).attr("data-accion");
+            if (accion === "ejecutar") { ejecutarInstr($(this).attr("data-cmd")); }
+            else if (accion === "editar") { mostrarFormInstr(instrPorId[$(this).attr("data-id")]); }
+            else if (accion === "eliminar") { eliminarInstr($(this).attr("data-id")); }
+        });
+        // Formulario del catalogo (crear / editar).
+        $("#instrNueva").on("click", function () { mostrarFormInstr(null); });
+        $("#instrCancelar").on("click", function () { modoFormInstr(false); });
+        $("#instrGuardar").on("click", guardarInstr);
+        $("#instrForm").on("submit", function (e) { e.preventDefault(); guardarInstr(); });
 
         // Clic en una sugerencia = completar ese comando.
         $sugLista.on("click", ".consola__sug-item", function () {
@@ -497,5 +740,9 @@
         $(window).on("beforeunload", function () {
             if (socket) { try { socket.disconnect(); } catch (e) { /* noop */ } }
         });
+
+        // Tiempo real del panel de sesiones (independiente del socket SSH): se
+        // conecta una vez y escucha aperturas/cierres de consola de este VPS.
+        conectarSocketHistorial();
     });
 })();

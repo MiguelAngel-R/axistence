@@ -19,6 +19,11 @@ $jsPagina  = ['assets/js/vps.js', 'assets/js/vps_consola.js'];
 // Tipos de asociacion validos (enum tipo_asociacion_vps).
 $tiposAsociacion = ['Compartido', 'Dedicado'];
 
+// URL PUBLICA del server de sockets (tiempo real del listado). El mismo server
+// unificado sirve la consola SSH (namespace /consola) y los listados (namespace
+// por defecto); aqui se usa la base para el namespace por defecto.
+$socketsWsUrl = getenv('AXISTENCE_SOCKETS_URL_PUBLICA') ?: 'http://127.0.0.1:3002';
+
 require __DIR__ . '/../layout/app_header.php';
 ?>
 
@@ -36,8 +41,8 @@ require __DIR__ . '/../layout/app_header.php';
 </div>
 
 
-<!-- Vista de listado (tabla) -->
-<div id="vistaListado">
+<!-- Vista de listado (tabla). data-ws = URL del server de sockets (tiempo real). -->
+<div id="vistaListado" data-ws="<?php echo htmlspecialchars($socketsWsUrl); ?>">
     <div class="tabla-wrap">
         <table class="table tabla tabla--clic">
             <thead>

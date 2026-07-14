@@ -15,6 +15,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config/bootstrap.php';
 require_once __DIR__ . '/../helpers/consola_tokens.php';
+require_once __DIR__ . '/_fila_sesion_consola.php';
 
 solo_metodo('POST');
 consola_requiere_node_key();
@@ -69,5 +70,15 @@ registrar_auditoria(
     'Apertura de consola SSH (usuario ' . ($usuarioId ?? 'desconocido') . ')',
     $vpsId
 );
+
+// --- Tiempo real ----------------------------------------------------
+// Se avisa a quien tenga abierto el tab Consola de ESTE VPS para que vea la
+// sesion aparecer como activa (punto verde + quien esta conectado) sin recargar.
+// La fila viaja con la MISMA forma que el panel de Historial (helper compartido).
+// Fire-and-forget: nunca rompe la apertura de la sesion.
+$filaSesion = fila_sesion_consola($pdo, (string)$sesionId);
+if ($filaSesion) {
+    notificar_socket('vps', 'sesion_vps:abierta', $filaSesion);
+}
 
 json_ok(['sesion_id' => $sesionId], 'Sesion de consola abierta');

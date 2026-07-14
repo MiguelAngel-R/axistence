@@ -18,7 +18,9 @@ $(function () {
     var modalForm     = AX.modal("#modalCorreo");
     var modalCuenta   = AX.modal("#modalCuentaCorreo");
     var modalExtension = AX.modal("#modalExtension");
+    var modalCompCuentas = AX.modal("#modalComplementoCuentas");
     var cuentaLic     = null;  // licencia activa en el drill-down (id, dominio, cupo)
+    var compActivo    = null;  // complemento abierto en el modal de asignacion (id, cupo, usadas)
     var COLUMNAS = 6;
     var modo = "crear";
     var editandoId = null;
@@ -204,17 +206,27 @@ $(function () {
         renderLicenciasTabla();
     }
 
-    // Alta de extension de espacio en vivo (tab "Extensiones" del detalle). El
-    // evento llega a toda la sala; solo aplica si el detalle abierto es el de esa
+    // Alta de complemento en vivo (tab "Complementos" del detalle). El evento
+    // llega a toda la sala; solo aplica si el detalle abierto es el de esa
     // relacion. Se antepone porque la tabla va ordenada por fecha DESC.
-    function socketExtensionCreada(payload) {
+    function socketComplementoCreado(payload) {
         if (!payload || !payload.id || !payload.cuenta_correo_id) { return; }
         if (detalleId !== payload.cuenta_correo_id) { return; } // no es la relacion en pantalla
         var $cuerpo = $("#detExtensiones");
         if ($cuerpo.find('tr[data-id="' + payload.id + '"]').length) { return; } // evita duplicar
         $cuerpo.find(".tabla-vacia").closest("tr").remove();                     // quita placeholder
-        $cuerpo.prepend(filaExtension(payload));
+        $cuerpo.prepend(filaComplemento(payload));
         aplicarFiltrosDetalle(); // respeta el filtro/busqueda vigente en la pestaña
+    }
+
+    // Asignacion de una cuenta a un complemento en vivo: actualiza la columna
+    // "Disponibles" de la fila del complemento (cupo restante) para todos los
+    // que tienen abierto el detalle de esa relacion. El evento llega a toda la
+    // sala; solo aplica si el detalle abierto es el de esa relacion.
+    function socketComplementoCuentaAsignada(payload) {
+        if (!payload || !payload.complemento_id || !payload.cuenta_correo_id) { return; }
+        if (detalleId !== payload.cuenta_correo_id) { return; } // no es la relacion en pantalla
+        actualizarDisponiblesFila(payload.complemento_id, payload.usadas, payload.cantidad_cuentas);
     }
 
     function conectarSocketCorreo() {
@@ -230,8 +242,9 @@ $(function () {
         socket.on("correo:creado", socketCorreoCreado);
         socket.on("correo:actualizado", socketCorreoActualizado);
         socket.on("correo:eliminado", socketCorreoEliminado);
-        socket.on("cuenta:creada", socketCuentaCreada);       // detalle: alta de cuenta en una licencia
-        socket.on("extension:creada", socketExtensionCreada); // detalle: alta de extension de espacio
+        socket.on("cuenta:creada", socketCuentaCreada);           // detalle: alta de cuenta en una licencia
+        socket.on("complemento:creado", socketComplementoCreado); // detalle: alta de complemento
+        socket.on("complemento_cuenta:asignada", socketComplementoCuentaAsignada); // detalle: cupo del complemento
     }
 
     // ===============================================================
@@ -480,19 +493,34 @@ $(function () {
         });
     }
 
-    // Fila de la tabla de extensiones de espacio del detalle. Embebe data-id
-    // (dedup en vivo) y data-fecha (filtro). La usan el pintado inicial y el alta
-    // de extension en tiempo real.
-    function filaExtension(e) {
-        var cuenta = $.trim((e.cuenta_nombre || "") + " " + (e.cuenta_apellidos || ""));
-        var lic = e.cuenta_correo ? (e.tipo_licencia || "Sin tipo de licencia") : "—";
-        var f = e.fecha_adquisicion ? String(e.fecha_adquisicion).substring(0, 10) : "";
-        return '<tr data-id="' + AX.escaparHtml(e.id) + '" data-fecha="' + AX.escaparHtml(f) + '">' +
-               "<td>" + AX.escaparHtml(cuenta || "—") + "</td>" +
-               "<td>" + AX.escaparHtml(e.cuenta_correo || "—") + "</td>" +
+    // Fila de la tabla de complementos del detalle. Embebe data-id (dedup en
+    // vivo), data-fecha (filtro) y data-registro (el complemento completo, para
+    // abrir el modal de asignacion al click). La usan el pintado inicial y el
+    // alta de complemento en tiempo real.
+    function filaComplemento(e) {
+        var lic = e.tipo_licencia || "Sin tipo de licencia";
+        var f = e.fecha_inicio ? String(e.fecha_inicio).substring(0, 10) : "";
+        var total = parseInt(e.cantidad_cuentas, 10) || 0;
+        var usadas = parseInt(e.usadas, 10) || 0;               // 0 en complementos recien creados
+        var disponibles = Math.max(0, total - usadas);
+        return '<tr data-id="' + AX.escaparHtml(e.id) + '" data-fecha="' + AX.escaparHtml(f) + '"' +
+               ' data-registro="' + AX.escaparHtml(JSON.stringify(e)) + '">' +
                "<td>" + AX.escaparHtml(lic) + "</td>" +
-               "<td>" + AX.escaparHtml(e.gigas_adicionales) + " GB</td>" +
-               "<td>" + AX.formatearFecha(e.fecha_adquisicion) + "</td></tr>";
+               "<td>" + AX.escaparHtml(e.nombre || "—") + "</td>" +
+               "<td>" + AX.escaparHtml(e.cantidad_cuentas != null ? e.cantidad_cuentas : "—") + "</td>" +
+               '<td class="js-comp-disp">' + disponibles + " / " + total + "</td>" +
+               "<td>" + money(e.valor) + "</td>" +
+               "<td>" + AX.formatearFecha(e.fecha_inicio) + "</td></tr>";
+    }
+
+    // Actualiza en la fila del complemento la celda "Disponibles" (cupo restante)
+    // a partir del cupo recalculado (usadas / total). La usan el socket de
+    // asignacion y el respaldo local cuando no hay socket.
+    function actualizarDisponiblesFila(complementoId, usadas, total) {
+        var $fila = $("#detExtensiones tr[data-id='" + complementoId + "']");
+        if (!$fila.length) { return; }
+        var disponibles = Math.max(0, (parseInt(total, 10) || 0) - (parseInt(usadas, 10) || 0));
+        $fila.find(".js-comp-disp").text(disponibles + " / " + (parseInt(total, 10) || 0));
     }
 
     function pintarDetalle(d) {
@@ -523,7 +551,7 @@ $(function () {
         $("#detCreado").text(AX.formatearFecha(cc.created_at));
         $("#detActualizado").text(AX.formatearFecha(cc.updated_at));
 
-        pintarSeccion($("#detExtensiones"), d.extensiones, 5, filaExtension);
+        pintarSeccion($("#detExtensiones"), d.complementos, 6, filaComplemento);
 
         // Cada licencia es clicable: abre (en el mismo tab) la tabla de sus cuentas.
         licenciasDetalle = d.licencias || [];
@@ -690,9 +718,9 @@ $(function () {
         });
     }
 
-    // --- Modal de asignar extension de espacio -----------------------
+    // --- Modal de asignar complemento --------------------------------
     // Abre el modal con el select de licencia poblado (datos ya cargados del
-    // detalle). Al elegir licencia se cargan sus cuentas; guardar hace el POST.
+    // detalle). El complemento cuelga de la licencia; guardar hace el POST.
     function abrirModalExtension() {
         var opts = '<option value="">Seleccione…</option>';
         for (var i = 0; i < licenciasDetalle.length; i++) {
@@ -702,53 +730,34 @@ $(function () {
             opts += '<option value="' + AX.escaparHtml(l.id) + '">' + AX.escaparHtml(etq) + "</option>";
         }
         $("#exLicencia").html(opts);
-        $("#exCuenta").prop("disabled", true).html('<option value="">Seleccione primero una licencia…</option>');
+        $("#exNombre").val("");
         $("#exCantidad").val("");
+        $("#exValor").val("");
+        $("#exFechaInicio").val("");
         $("#formExtensionError").addClass("d-none");
         $("#btnGuardarExtension").prop("disabled", false);
         modalExtension.abrir();
         $("#exLicencia").trigger("focus");
     }
 
-    // Carga en #exCuenta las cuentas de la licencia elegida (reusa cuentas_listar).
-    function cargarCuentasExtension(licId) {
-        var $c = $("#exCuenta");
-        if (!licId) {
-            $c.prop("disabled", true).html('<option value="">Seleccione primero una licencia…</option>');
-            return;
-        }
-        $c.prop("disabled", true).html('<option value="">Cargando cuentas…</option>');
-        $.ajax({
-            url: "endpoints/correo/cuentas_listar.php", method: "GET", dataType: "json",
-            xhrFields: { withCredentials: true }, data: { licencia_id: licId }
-        }).done(function (res) {
-            var cuentas = (res && res.ok && res.data && res.data.cuentas) ? res.data.cuentas : [];
-            if (!cuentas.length) {
-                $c.prop("disabled", true).html('<option value="">Esta licencia no tiene cuentas creadas</option>');
-                return;
-            }
-            $c.prop("disabled", false).html('<option value="">Seleccione…</option>' +
-                cuentas.map(function (cu) {
-                    var nom = $.trim((cu.nombre || "") + " " + (cu.apellidos || ""));
-                    var etq = (cu.correo || "") + (nom ? " · " + nom : "");
-                    return '<option value="' + AX.escaparHtml(cu.id) + '">' + AX.escaparHtml(etq) + "</option>";
-                }).join(""));
-        }).fail(function () {
-            $c.prop("disabled", true).html('<option value="">Error al cargar las cuentas</option>');
-        });
-    }
-
     function enviarExtension() {
         var datos = {
-            licencia_id:       $("#exLicencia").val(),
-            cuenta_id:         $("#exCuenta").val(),
-            gigas_adicionales: $("#exCantidad").val()
+            licencia_id:      $("#exLicencia").val(),
+            nombre:           $.trim($("#exNombre").val()),
+            cantidad_cuentas: $("#exCantidad").val(),
+            valor:            $("#exValor").val(),
+            fecha_inicio:     $("#exFechaInicio").val()
         };
-        if (!datos.licencia_id || !datos.cuenta_id || !datos.gigas_adicionales) {
-            return AX.errorFormulario("#formExtensionError", "Completa todos los campos (licencia, cuenta y cantidad).");
+        if (!datos.licencia_id || !datos.nombre || !datos.cantidad_cuentas ||
+            datos.valor === "" || !datos.fecha_inicio) {
+            return AX.errorFormulario("#formExtensionError",
+                "Completa todos los campos (licencia, tipo de complemento, cantidad, valor y fecha de inicio).");
         }
-        if ((parseInt(datos.gigas_adicionales, 10) || 0) < 1) {
-            return AX.errorFormulario("#formExtensionError", "La cantidad de extensión debe ser 1 GB o más.");
+        if ((parseInt(datos.cantidad_cuentas, 10) || 0) < 1) {
+            return AX.errorFormulario("#formExtensionError", "La cantidad de cuentas debe ser 1 o más.");
+        }
+        if ((parseFloat(datos.valor) || 0) < 0) {
+            return AX.errorFormulario("#formExtensionError", "El valor no puede ser negativo.");
         }
 
         var $btn = $("#btnGuardarExtension").prop("disabled", true);
@@ -758,16 +767,162 @@ $(function () {
         }).done(function (res) {
             if (res && res.ok) {
                 modalExtension.cerrar();
-                AX.exito("La extensión de espacio se asignó correctamente.");
+                AX.exito("El complemento se asignó correctamente.");
                 // La fila aparece en vivo por socket (el propio actor la recibe);
                 // solo se refresca el detalle como respaldo si no hay socket.
                 if (!socketActivo && detalleId) { abrirDetalle(detalleId); }
             } else {
-                AX.errorFormulario("#formExtensionError", (res && res.mensaje) || "No se pudo asignar la extensión.");
+                AX.errorFormulario("#formExtensionError", (res && res.mensaje) || "No se pudo asignar el complemento.");
                 $btn.prop("disabled", false);
             }
         }).fail(function (xhr) {
-            AX.errorFormulario("#formExtensionError", (xhr.responseJSON && xhr.responseJSON.mensaje) || "No se pudo asignar la extensión.");
+            AX.errorFormulario("#formExtensionError", (xhr.responseJSON && xhr.responseJSON.mensaje) || "No se pudo asignar el complemento.");
+            $btn.prop("disabled", false);
+        });
+    }
+
+    // ===============================================================
+    //  Cuentas de un complemento (modal de asignacion)
+    //  Se abre al hacer click en una fila del tab "Complementos". Permite
+    //  asignar el complemento a las cuentas de su licencia (con cupo) y lista
+    //  las que ya lo tienen.
+    // ===============================================================
+    var compCuentasLic = [];  // cuentas de la licencia del complemento abierto
+
+    // Cabecera del modal (cupo usadas/total + estado del boton/select segun cupo).
+    function actualizarCabeceraComp() {
+        if (!compActivo) { return; }
+        $("#ccuCupo").text(compActivo.usadas + " / " + compActivo.cantidad_cuentas);
+        var lleno = compActivo.usadas >= compActivo.cantidad_cuentas;
+        $("#ccuInfo").text(lleno
+            ? "El complemento ya alcanzó su límite de cuentas."
+            : "Quedan " + (compActivo.cantidad_cuentas - compActivo.usadas) + " de " +
+              compActivo.cantidad_cuentas + " cuenta(s) por asignar.");
+        $("#btnAsignarComplementoCuenta").prop("disabled", lleno);
+    }
+
+    // Repuebla el select con las cuentas de la licencia que AÚN no tienen el
+    // complemento asignado (se calcula desde compActivo.asignadasIds).
+    function pintarSelectCuentasComp() {
+        var $sel = $("#ccuCuenta");
+        var disponibles = compCuentasLic.filter(function (cu) {
+            return compActivo.asignadasIds.indexOf(String(cu.id)) === -1;
+        });
+        if (!compCuentasLic.length) {
+            $sel.prop("disabled", true).html('<option value="">Esta licencia no tiene cuentas creadas</option>');
+            return;
+        }
+        if (!disponibles.length) {
+            $sel.prop("disabled", true).html('<option value="">Todas las cuentas ya tienen el complemento</option>');
+            return;
+        }
+        $sel.prop("disabled", false).html('<option value="">Seleccione…</option>' +
+            disponibles.map(function (cu) {
+                var nom = $.trim((cu.nombre || "") + " " + (cu.apellidos || ""));
+                var etq = (cu.correo || "") + (nom ? " · " + nom : "");
+                return '<option value="' + AX.escaparHtml(cu.id) + '">' + AX.escaparHtml(etq) + "</option>";
+            }).join(""));
+    }
+
+    // Fila de la tabla de cuentas ya asignadas (dedup por data-id).
+    function filaAsignada(a) {
+        var nom = $.trim((a.nombre || "") + " " + (a.apellidos || ""));
+        return '<tr data-id="' + AX.escaparHtml(a.cuenta_id) + '">' +
+               "<td>" + AX.escaparHtml(nom || "—") + "</td>" +
+               "<td>" + AX.escaparHtml(a.correo || "—") + "</td>" +
+               "<td>" + AX.escaparHtml(a.tipo_cuenta || "Usuario") + "</td>" +
+               "<td>" + AX.formatearFecha(a.created_at) + "</td></tr>";
+    }
+
+    // Abre el modal con la info del complemento (de la fila) y carga sus cuentas.
+    function abrirModalComplementoCuentas(comp) {
+        if (!comp || !comp.id) { return; }
+        compActivo = null;
+        compCuentasLic = [];
+        $("#formComplementoCuentaError").addClass("d-none");
+        $("#ccuTitulo").text("Complemento: " + (comp.nombre || "—"));
+        $("#ccuLicencia").text(comp.tipo_licencia || "Sin tipo de licencia");
+        $("#ccuValor").text(money(comp.valor));
+        $("#ccuFecha").text(AX.formatearFecha(comp.fecha_inicio));
+        $("#ccuCupo").text("—");
+        $("#ccuInfo").text("");
+        $("#ccuCuenta").prop("disabled", true).html('<option value="">Cargando…</option>');
+        $("#ccuAsignadas").html('<tr><td colspan="4" class="tabla-vacia">Cargando…</td></tr>');
+        $("#btnAsignarComplementoCuenta").prop("disabled", true);
+        modalCompCuentas.abrir();
+
+        $.ajax({
+            url: "endpoints/correo/complemento_cuentas_listar.php", method: "GET", dataType: "json",
+            xhrFields: { withCredentials: true }, data: { complemento_id: comp.id }
+        }).done(function (res) {
+            if (!res || !res.ok) {
+                $("#ccuAsignadas").html('<tr><td colspan="4" class="tabla-vacia">No se pudieron cargar las cuentas.</td></tr>');
+                return;
+            }
+            pintarComplementoCuentas(res.data, comp);
+        }).fail(function (xhr) {
+            var msg = (xhr.responseJSON && xhr.responseJSON.mensaje) || "Error al cargar las cuentas.";
+            $("#ccuAsignadas").html('<tr><td colspan="4" class="tabla-vacia">' + AX.escaparHtml(msg) + "</td></tr>");
+        });
+    }
+
+    function pintarComplementoCuentas(data, comp) {
+        var c = data.complemento || {};
+        var asignadas = data.asignadas || [];
+        compCuentasLic = data.cuentas || [];
+        compActivo = {
+            id:               comp.id,
+            cantidad_cuentas: parseInt(c.cantidad_cuentas != null ? c.cantidad_cuentas : comp.cantidad_cuentas, 10) || 0,
+            usadas:           parseInt(data.usadas, 10) || 0,
+            asignadasIds:     asignadas.map(function (a) { return String(a.cuenta_id); })
+        };
+        // Datos autoritativos del endpoint (por si cambiaron desde el pintado).
+        $("#ccuLicencia").text(c.tipo_licencia || "Sin tipo de licencia");
+        $("#ccuValor").text(money(c.valor));
+        $("#ccuFecha").text(AX.formatearFecha(c.fecha_inicio));
+
+        pintarSeccion($("#ccuAsignadas"), asignadas, 4, filaAsignada);
+        pintarSelectCuentasComp();
+        actualizarCabeceraComp();
+    }
+
+    function asignarComplementoCuenta() {
+        if (!compActivo) { return; }
+        var cuentaId = $("#ccuCuenta").val();
+        if (!cuentaId) {
+            return AX.errorFormulario("#formComplementoCuentaError", "Selecciona una cuenta de la licencia.");
+        }
+        if (compActivo.usadas >= compActivo.cantidad_cuentas) {
+            return AX.errorFormulario("#formComplementoCuentaError", "El complemento ya alcanzó su límite de cuentas.");
+        }
+        $("#formComplementoCuentaError").addClass("d-none");
+
+        var $btn = $("#btnAsignarComplementoCuenta").prop("disabled", true);
+        $.ajax({
+            url: "endpoints/correo/complemento_cuenta_asignar.php", method: "POST", contentType: "application/json",
+            dataType: "json", xhrFields: { withCredentials: true },
+            data: JSON.stringify({ complemento_id: compActivo.id, cuenta_id: cuentaId })
+        }).done(function (res) {
+            if (res && res.ok && res.data && res.data.asignacion) {
+                var a = res.data.asignacion;
+                $("#ccuAsignadas").find(".tabla-vacia").closest("tr").remove();
+                $("#ccuAsignadas").append(filaAsignada(a));
+                compActivo.usadas += 1;
+                compActivo.asignadasIds.push(String(a.cuenta_id));
+                pintarSelectCuentasComp();
+                actualizarCabeceraComp();
+                // "Disponibles" en la tabla de fondo se actualiza en vivo por
+                // socket (el propio actor lo recibe); respaldo local sin socket.
+                if (!socketActivo) {
+                    actualizarDisponiblesFila(compActivo.id, compActivo.usadas, compActivo.cantidad_cuentas);
+                }
+                AX.toast("Complemento asignado a la cuenta.", "success");
+            } else {
+                AX.errorFormulario("#formComplementoCuentaError", (res && res.mensaje) || "No se pudo asignar el complemento.");
+                $btn.prop("disabled", false);
+            }
+        }).fail(function (xhr) {
+            AX.errorFormulario("#formComplementoCuentaError", (xhr.responseJSON && xhr.responseJSON.mensaje) || "No se pudo asignar el complemento.");
             $btn.prop("disabled", false);
         });
     }
@@ -844,11 +999,17 @@ $(function () {
             $i.removeClass("bi-eye").addClass("bi-eye-slash");
         }
     });
-    // Extensiones de espacio: el boton abre el modal; al elegir licencia se
-    // cargan sus cuentas; guardar asigna la extension.
+    // Complementos: el boton abre el modal; guardar asigna el complemento a la
+    // licencia elegida.
     $(document).on("click", "#btnAsignarExtension", abrirModalExtension);
-    $(document).on("change", "#exLicencia", function () { cargarCuentasExtension($(this).val()); });
     $(document).on("click", "#btnGuardarExtension", enviarExtension);
+    // Click en una fila de complementos: abre el modal para asignarlo a las
+    // cuentas de su licencia.
+    $(document).on("click", "#detExtensiones tr[data-registro]", function () {
+        var comp = AX.datosFila(this);
+        if (comp) { abrirModalComplementoCuentas(comp); }
+    });
+    $(document).on("click", "#btnAsignarComplementoCuenta", asignarComplementoCuenta);
     // Al cambiar de pestaña se vuelve siempre al listado de licencias.
     $('#detTabs [data-bs-toggle="tab"]').on("shown.bs.tab", cerrarCuentasLicencia);
 

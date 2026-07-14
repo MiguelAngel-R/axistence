@@ -17,6 +17,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config/bootstrap.php';
 require_once __DIR__ . '/../helpers/consola_tokens.php';
+require_once __DIR__ . '/_fila_sesion_consola.php';
 
 solo_metodo('POST');
 consola_requiere_node_key();
@@ -59,6 +60,16 @@ if ($sesion['estado'] === 'activa') {
         'Cierre de consola SSH (estado ' . $estado . ')',
         (string)$sesion['vps_id']
     );
+
+    // --- Tiempo real ------------------------------------------------
+    // Solo si la sesion pasó de activa a cerrada (idempotente): se avisa a quien
+    // tenga abierto el tab Consola de ESTE VPS para que el punto verde cambie a
+    // cerrada/error en vivo. Misma forma de fila que el Historial (helper
+    // compartido). Fire-and-forget: nunca rompe el cierre.
+    $filaSesion = fila_sesion_consola($pdo, $sesionId);
+    if ($filaSesion) {
+        notificar_socket('vps', 'sesion_vps:cerrada', $filaSesion);
+    }
 }
 
 json_ok(null, 'Sesion de consola cerrada');

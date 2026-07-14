@@ -19,6 +19,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config/bootstrap.php';
 require_once __DIR__ . '/_referencia.php';
+require_once __DIR__ . '/_fila.php';
 
 solo_metodo('POST');
 requiere_permiso('VPS', 'crear');
@@ -111,5 +112,15 @@ registrar_auditoria(
         'fecha_vencimiento' => $vencimiento,
     ]
 );
+
+// --- Tiempo real ----------------------------------------------------
+// Se avisa a los navegadores que tienen el listado abierto para que inserten
+// la fila sin recargar. Se emite SOLO tras el commit y la auditoria: el evento
+// viaja con la fila completa (hardware/precio/tipo heredados de la referencia)
+// para no volver a consultar la BD en el cliente.
+$fila = vps_fila_por_id($pdo, $id);
+if ($fila) {
+    notificar_socket('vps', 'vps:creado', $fila);
+}
 
 json_ok(['id' => $id], 'VPS creado correctamente');

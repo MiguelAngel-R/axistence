@@ -17,12 +17,13 @@ const NOMBRE = 'correo';
 // Eventos permitidos (whitelist). PHP no puede disparar ninguno fuera de esta
 // lista: si lo intenta, emitir() devuelve false e index2.js lo rechaza.
 //   correo:*    -> actualizan el LISTADO (tabla de relaciones de correo).
-//   cuenta:* / extension:* -> actualizan el DETALLE (viewProducto). El evento
-//               viaja con cuenta_correo_id (la relacion) para que cada navegador
-//               decida si le corresponde (y licencia_id en el caso de cuenta).
+//   cuenta:* / complemento:* / complemento_cuenta:* -> actualizan el DETALLE
+//               (viewProducto). El evento viaja con cuenta_correo_id (la
+//               relacion) para que cada navegador decida si le corresponde (y
+//               licencia_id en el caso de cuenta).
 const EVENTOS = [
     'correo:creado', 'correo:actualizado', 'correo:eliminado',
-    'cuenta:creada', 'extension:creada',
+    'cuenta:creada', 'complemento:creado', 'complemento_cuenta:asignada',
 ];
 
 // Un navegador que abre el listado se une a la sala del modulo.

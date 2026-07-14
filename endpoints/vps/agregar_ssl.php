@@ -12,6 +12,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config/bootstrap.php';
 require_once __DIR__ . '/_detalle.php';
+require_once __DIR__ . '/../ssl/_fila_socket.php';
 
 solo_metodo('POST');
 requiere_permiso('VPS', 'editar');
@@ -88,5 +89,19 @@ $id = $stmt->fetchColumn();
 
 auditar_en_vps($vpsId, 'Agrego el certificado SSL de ' . $nombreDominio . ' al servidor ' . $ref,
     ['dominio' => $nombreDominio, 'proveedor_id' => $proveedor, 'fecha_vencimiento' => $fVen]);
+
+// --- Tiempo real ----------------------------------------------------
+// Un certificado creado desde el detalle del VPS impacta DOS vistas; se
+// reconsulta UNA vez con la forma exacta del listado de SSL (helper compartido)
+// y se reparten dos eventos (fire-and-forget, nunca rompen la operacion):
+//   * 'ssl' / 'ssl:creado'       -> lo pinta el LISTADO del modulo Certificados
+//     SSL (mismo evento/forma que ssl/crear.php; sin tocar su JS).
+//   * 'vps' / 'ssl_vps:creado'   -> lo agrega a la tabla de Certificados del
+//     DETALLE (viewProducto) de quien tenga abierto ESTE VPS (trae vps_id).
+$filaSsl = fila_ssl_socket($pdo, (string)$id);
+if ($filaSsl) {
+    notificar_socket('ssl', 'ssl:creado', $filaSsl);
+    notificar_socket('vps', 'ssl_vps:creado', $filaSsl);
+}
 
 json_ok(['id' => $id], 'Certificado SSL agregado correctamente');

@@ -1,15 +1,26 @@
+
 // =====================================================================
-//  AXISTENCE - Servidor de Consola SSH (websockets)
+//  AXISTENCE - Servidor unico de websockets.
 //
-//  Node mantiene la conexion SSH viva y hace streaming; PHP autoriza y
-//  persiste. Cubre:
-//    - FASE 2: Express + Socket.IO + CORS y handshake por token validado
-//      CONTRA PHP (consola_validar.php) antes de abrir nada.
-//    - FASE 3: tras autorizar, abre un shell PTY con `ssh2` hacia el VPS
-//      y hace streaming bidireccional (output/input), resize, cierre y
-//      timeout por inactividad.
+//  Un solo proceso Node / un solo puerto atiende DOS responsabilidades
+//  que antes vivian en procesos separados (index.js + index2.js). Se
+//  separan por NAMESPACE de Socket.IO para que no se pisen:
 //
-//  Aun NO se registran los comandos en BD (eso es la Fase 4).
+//    * namespace por defecto '/'  -> LISTADOS EN TIEMPO REAL
+//        PHP (crear/actualizar/eliminar)
+//            --HTTP POST /emitir (clave SOCKETS_KEY)--> este server
+//            --Socket.IO a la sala del modulo-->        navegadores
+//        La logica de cada modulo vive en ./modulos/<modulo>.js.
+//
+//    * namespace '/consola'       -> CONSOLA SSH EN VIVO
+//        Node mantiene la conexion SSH viva y hace streaming; PHP
+//        autoriza (token, clave CONSOLA_NODE_KEY) y persiste. Abre un
+//        shell PTY con `ssh2` y hace streaming bidireccional.
+//
+//  Las dos claves compartidas se mantienen SEPARADAS a proposito: cubren
+//  fronteras de confianza distintas (SOCKETS_KEY autoriza PHP->server en
+//  /emitir; CONSOLA_NODE_KEY autoriza server->PHP en los callbacks de la
+//  consola). Conviven sin problema en el mismo proceso.
 //
 //  ESM ("type": "module"). Requiere Node 18+ (fetch global).
 // =====================================================================
@@ -20,14 +31,37 @@ import cors from 'cors';
 import { Server } from 'socket.io';
 import ssh2 from 'ssh2';
 
+import clientes from './modulos/clientes.js';
+import proveedores from './modulos/proveedores.js';
+import dominios from './modulos/dominios.js';
+import ssl from './modulos/ssl.js';
+import correo from './modulos/correo.js';
+import proyectos from './modulos/proyectos.js';
+import vps from './modulos/vps.js';
+
 const { Client: SSHClient } = ssh2;
 
+// --- Registro de modulos de listados --------------------------------
+// Para sumar un modulo: crear ./modulos/<modulo>.js (mismo contrato que
+// clientes.js) e incluirlo aqui.
+const MODULOS   = [clientes, proveedores, dominios, ssl, correo, proyectos, vps];
+const porNombre = new Map(MODULOS.map((m) => [m.nombre, m]));
+
 // --- Configuracion (env con defaults de desarrollo) ------------------
-const PUERTO      = Number(process.env.AXISTENCE_WS_PORT || 3001);
+// Puerto unico. Se mantiene AXISTENCE_SOCKETS_PORT como nombre principal
+// (era el de los listados, 3002) y se acepta AXISTENCE_WS_PORT como alias
+// para no romper despliegues previos de la consola.
+const PUERTO      = Number(process.env.AXISTENCE_SOCKETS_PORT || process.env.AXISTENCE_WS_PORT || 3002);
+const CORS_ORIGIN = process.env.AXISTENCE_SOCKETS_CORS_ORIGIN || process.env.AXISTENCE_WS_CORS_ORIGIN || '*';
+
+// -- Clave compartida PHP<->Node para los LISTADOS (POST /emitir). ----
+// Debe coincidir con SOCKETS_KEY en endpoints/config/config.php.
+const SOCKETS_KEY = process.env.AXISTENCE_SOCKETS_KEY || 'axistence-sockets-dev-cambiar-en-produccion';
+
+// -- Clave compartida Node<->PHP para la CONSOLA (callbacks S2S). -----
+// Se envia en cada llamada a los endpoints consola_*. Debe coincidir con
+// CONSOLA_NODE_KEY en config.php.
 const PHP_URL     = (process.env.AXISTENCE_PHP_URL || 'http://127.0.0.1:8080').replace(/\/$/, '');
-const CORS_ORIGIN = process.env.AXISTENCE_WS_CORS_ORIGIN || '*';
-// Clave compartida Node<->PHP: se envia en cada llamada a los endpoints
-// server-to-server. Debe coincidir con CONSOLA_NODE_KEY en config.php.
 const NODE_KEY    = process.env.AXISTENCE_CONSOLA_NODE_KEY || 'axistence-consola-node-dev-cambiar-en-produccion';
 const VALIDAR_URL       = `${PHP_URL}/endpoints/vps/consola_validar.php`;
 const CONEXION_URL      = `${PHP_URL}/endpoints/vps/consola_conexion.php`;
@@ -37,14 +71,44 @@ const SESION_CERRAR_URL = `${PHP_URL}/endpoints/vps/consola_sesion_cerrar.php`;
 const HUERFANAS_URL     = `${PHP_URL}/endpoints/vps/consola_cerrar_huerfanas.php`;
 // Timeout por inactividad del shell (ms). 0 lo desactiva.
 const IDLE_MS     = Number(process.env.AXISTENCE_SSH_IDLE_MS || 5 * 60 * 1000);
-const VERSION     = '0.5.0'; // Fase 7
 
-// --- Express (health-check) ------------------------------------------
+const VERSION     = '2.0.0'; // servidor unificado (listados + consola)
+
+// --- Express (health-check + emisor server-to-server) ----------------
 const app = express();
 app.use(cors({ origin: CORS_ORIGIN }));
+app.use(express.json());
 
 app.get('/', (_req, res) => {
-    res.json({ ok: true, servicio: 'axistence-consola-ssh', version: VERSION });
+    res.json({
+        ok: true,
+        servicio: 'axistence-websockets',
+        version: VERSION,
+        namespaces: {
+            '/': { servicio: 'listados', modulos: [...porNombre.keys()] },
+            '/consola': { servicio: 'consola-ssh' },
+        },
+    });
+});
+
+// PHP publica aqui los cambios de los listados; se reemiten a la sala del
+// modulo. Se exige la clave compartida para que nadie mas inyecte eventos.
+app.post('/emitir', (req, res) => {
+    if ((req.get('X-Sockets-Key') || '') !== SOCKETS_KEY) {
+        return res.status(401).json({ ok: false, mensaje: 'Clave invalida' });
+    }
+    const { modulo, evento, data } = req.body || {};
+    const mod = porNombre.get(modulo);
+    if (!mod) {
+        return res.status(404).json({ ok: false, mensaje: 'Modulo desconocido' });
+    }
+    // Los listados viven en el namespace por defecto (io): los modulos
+    // reciben ese io tal cual, sin cambios respecto al server anterior.
+    const emitido = mod.emitir(io, evento, data);
+    if (!emitido) {
+        return res.status(422).json({ ok: false, mensaje: 'Evento no permitido para el modulo' });
+    }
+    return res.json({ ok: true });
 });
 
 const server = http.createServer(app);
@@ -53,6 +117,27 @@ const server = http.createServer(app);
 const io = new Server(server, {
     cors: { origin: CORS_ORIGIN, methods: ['GET', 'POST'] },
 });
+
+// =====================================================================
+//  NAMESPACE POR DEFECTO '/'  ->  LISTADOS EN TIEMPO REAL
+// =====================================================================
+io.on('connection', (socket) => {
+    // El navegador pide unirse a la sala de un modulo (p. ej. 'clientes').
+    socket.on('unirse', (nombreModulo) => {
+        const mod = porNombre.get(String(nombreModulo));
+        if (!mod) {
+            socket.emit('sala_rechazada', { modulo: nombreModulo });
+            return;
+        }
+        mod.conexion(io, socket);
+        socket.emit('unido', { modulo: mod.nombre });
+    });
+});
+
+// =====================================================================
+//  NAMESPACE '/consola'  ->  CONSOLA SSH EN VIVO
+// =====================================================================
+const consolaNs = io.of('/consola');
 
 /**
  * POST JSON a un endpoint PHP interno de la consola. Adjunta la clave
@@ -110,17 +195,38 @@ async function validarTokenContraPhp(token) {
     }
 }
 
+// Secuencias ANSI (colores, movimiento de cursor). Se quitan de la salida
+// antes de inspeccionar si es un prompt de contraseña, porque estos suelen
+// venir coloreados.
+const RE_ANSI = /\x1b\[[0-9;?]*[a-zA-Z]|\x1b[()][A-Za-z0-9]|\x1b[=>]/g;
+
+// Prompt tipico con el que el servidor pide una contraseña / passphrase:
+// una linea que contiene "password"/"passphrase"/"contraseña" y TERMINA en ":"
+// (sin salto de linea despues, porque el cursor queda esperando en la misma
+// linea). Cubre casos como:
+//   Password:                        | [sudo] password for miguel:
+//   miguel@host's password:          | Enter passphrase for key '...':
+//   New password: / Retype new password:  (comando passwd)
+// El no exigir salto de linea final evita marcar como prompt la salida de un
+// comando normal (que termina en "\n"), p. ej. `cat` mostrando "db_password:".
+const RE_PROMPT_CLAVE = /(?:password|passphrase|contraseña|verification code)\b[^\r\n]*:[ \t]*$/i;
+
 /**
  * Crea un lector de linea a partir de las pulsaciones que teclea el
  * operador. Acumula caracteres imprimibles y, al presionar Enter (\r/\n),
  * entrega la linea como "comando". Soporta backspace y Ctrl+C, e ignora las
  * secuencias de escape ANSI (flechas, etc.).
  *
+ * SEGURIDAD: si `estadoClave.esperando` esta activo (el shell acaba de pedir
+ * una contraseña, ver RE_PROMPT_CLAVE), la linea tecleada es un secreto y NO
+ * se registra en el historial; solo se consume la bandera. Asi la contraseña
+ * de `sudo`, `ssh`, `passwd`, etc. nunca llega a la base de datos.
+ *
  * Limitacion conocida: al basarse en las teclas del cliente, no "ve" lo que
  * el shell expande por su cuenta (historial con flechas, tab-completion) ni
  * distingue si se esta dentro de un editor; registra la linea tecleada.
  */
-function crearBufferComandos(onComando) {
+function crearBufferComandos(onComando, estadoClave = { esperando: false }) {
     let buf = '';
     let enEscape = false;
     return (texto) => {
@@ -134,11 +240,18 @@ function crearBufferComandos(onComando) {
             } else if (ch === '\r' || ch === '\n') {
                 const linea = buf.trim();
                 buf = '';
+                if (estadoClave.esperando) {
+                    // La linea era la respuesta a un prompt de contraseña:
+                    // se descarta y se apaga la bandera (no se registra nada).
+                    estadoClave.esperando = false;
+                    continue;
+                }
                 if (linea) onComando(linea);
             } else if (ch === '\x7f' || ch === '\b') {
                 buf = buf.slice(0, -1);
             } else if (ch === '\x03') {
-                buf = ''; // Ctrl+C cancela la linea en curso
+                buf = '';                     // Ctrl+C cancela la linea en curso
+                estadoClave.esperando = false; // y tambien el prompt de clave
             } else if (ch.codePointAt(0) >= 0x20) {
                 buf += ch;
             }
@@ -231,7 +344,17 @@ function abrirSesionSsh(socket, params, token) {
         // si sesionResuelta y sin sesionId, la sesion no se pudo crear -> se descarta.
     };
 
-    const bufferComandos = crearBufferComandos(registrarComando);
+    // Bandera compartida con el lector de teclas: cuando la salida del shell
+    // termina en un prompt de contraseña, lo siguiente que teclee el operador
+    // es un secreto y NO se debe registrar en el historial.
+    const estadoClave = { esperando: false };
+    const detectarPromptClave = (texto) => {
+        if (RE_PROMPT_CLAVE.test(texto.replace(RE_ANSI, ''))) {
+            estadoClave.esperando = true;
+        }
+    };
+
+    const bufferComandos = crearBufferComandos(registrarComando, estadoClave);
 
     const abrirSesionBd = () => {
         phpPost(SESION_ABRIR_URL, { token }).then((data) => {
@@ -288,11 +411,16 @@ function abrirSesionSsh(socket, params, token) {
 
             // VPS -> navegador
             stream.on('data', (data) => {
-                socket.emit('output', data.toString('utf8'));
+                const texto = data.toString('utf8');
+                socket.emit('output', texto);
+                detectarPromptClave(texto); // ¿el shell esta pidiendo una clave?
                 reiniciarIdle();
             });
             stream.stderr.on('data', (data) => {
-                socket.emit('output', data.toString('utf8'));
+                // sudo/ssh suelen escribir el prompt de contraseña en stderr.
+                const texto = data.toString('utf8');
+                socket.emit('output', texto);
+                detectarPromptClave(texto);
             });
             stream.on('close', () => {
                 socket.emit('ssh_cerrado', { mensaje: 'La sesion SSH termino.' });
@@ -332,7 +460,7 @@ function abrirSesionSsh(socket, params, token) {
     conn.connect(params);
 }
 
-io.on('connection', async (socket) => {
+consolaNs.on('connection', async (socket) => {
     const token = socket.handshake.auth?.token || socket.handshake.query?.token;
 
     if (!token) {
@@ -353,7 +481,7 @@ io.on('connection', async (socket) => {
     console.log(`[consola] Autorizado socket=${socket.id} vps=${ctx.vps_id} usuario=${ctx.usuario_id}`);
     socket.emit('autorizado', { vps_id: ctx.vps_id, usuario_id: ctx.usuario_id });
 
-    // Fase 3: abrir la conexion SSH real (o simulada en pruebas).
+    // Abrir la conexion SSH real (o simulada en pruebas).
     const params = await obtenerParametrosSsh(ctx, String(token));
     if (!params) {
         socket.emit('ssh_error', { mensaje: 'No hay credenciales SSH configuradas para este VPS.' });
@@ -363,9 +491,11 @@ io.on('connection', async (socket) => {
     abrirSesionSsh(socket, params, String(token));
 });
 
+// --- Arranque --------------------------------------------------------
 server.listen(PUERTO, () => {
-    console.log(`[consola] Servidor escuchando en http://127.0.0.1:${PUERTO}`);
-    console.log(`[consola] Validando tokens contra: ${VALIDAR_URL}`);
+    console.log(`[ws] Servidor unico escuchando en http://127.0.0.1:${PUERTO}`);
+    console.log(`[ws] Listados (namespace '/'): ${[...porNombre.keys()].join(', ') || '(ninguno)'}`);
+    console.log(`[ws] Consola SSH (namespace '/consola') validando tokens contra: ${VALIDAR_URL}`);
 
     // Al arrancar, este proceso no tiene ninguna consola SSH viva: cualquier
     // sesion 'activa' en BD es huerfana de una ejecucion anterior. Se cierran.

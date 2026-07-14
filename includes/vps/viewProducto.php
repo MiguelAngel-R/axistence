@@ -18,9 +18,11 @@ $criticidades  = ['Información', 'Advertencia', 'Importante', 'Crítica'];
 $tiposEvento   = ['Sistema Operativo', 'Software', 'Librerías', 'Base de Datos'];
 $servidoresWeb = ['Nginx', 'Apache', 'Otro'];
 
-// URL del server de websockets (consola SSH). Sobrescribible por entorno en
-// produccion; por defecto apunta al server Node local de desarrollo.
-$consolaWsUrl = getenv('AXISTENCE_CONSOLA_WS_URL') ?: 'http://127.0.0.1:3001';
+// URL BASE del server unico de websockets. La consola SSH usa el namespace
+// "/consola" (lo agrega vps_consola.js); los listados usan el namespace por
+// defecto del MISMO server/puerto. Sobrescribible por entorno en produccion;
+// por defecto apunta al server Node local de desarrollo (puerto unificado).
+$consolaWsUrl = getenv('AXISTENCE_CONSOLA_WS_URL') ?: 'http://127.0.0.1:3002';
 
 // Definicion de pestañas (orden estricto). 'add' define el boton "Agregar".
 $tabs = [
@@ -162,6 +164,10 @@ $tabs = [
                                 </button>
                                 <button type="button" class="btn btn-outline-secondary btn-sm" id="consolaDesconectar" disabled>
                                     <i class="bi bi-x-circle" aria-hidden="true"></i> Desconectar
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" id="consolaInstrucciones"
+                                        title="Instrucciones rápidas (crear y ejecutar comandos)">
+                                    <i class="bi bi-lightning-charge" aria-hidden="true"></i> Instrucciones
                                 </button>
                                 <span class="consola__estado" id="consolaEstado" data-estado="off">Desconectado</span>
                             </div>
@@ -636,6 +642,83 @@ $tabs = [
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
                 <button type="button" class="btn btn-primary btn-sm" id="btnGuardarAddCred"><i class="bi bi-check-lg"></i> Guardar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal "Instrucciones rapidas": catalogo CONFIGURABLE de comandos. Dos vistas
+     dentro del mismo modal (las alterna vps_consola.js):
+       - LISTA: instrucciones agrupadas por categoria; cada una con acciones
+         ejecutar (▶, corre en la terminal), editar (✎) y eliminar (×).
+       - FORMULARIO: crear/editar una instruccion (categoria, titulo, descripcion,
+         comando). Los datos salen de consola_instrucciones.php (GET/POST/DELETE). -->
+<div class="modal fade" id="modalInstrucciones" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title h6"><i class="bi bi-lightning-charge" aria-hidden="true"></i> Instrucciones rápidas</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Vista LISTA -->
+                <div id="instrVista">
+                    <div class="consola__instr-top">
+                        <p class="form-text mt-0 mb-0">
+                            <i class="bi bi-info-circle" aria-hidden="true"></i>
+                            <i class="bi bi-play-fill" aria-hidden="true"></i> ejecuta de inmediato en la terminal conectada.
+                        </p>
+                        <button type="button" class="btn btn-primary btn-sm" id="instrNueva">
+                            <i class="bi bi-plus-lg" aria-hidden="true"></i> Nueva instrucción
+                        </button>
+                    </div>
+                    <div id="instrLista" class="consola__instr">
+                        <div class="consola__cargando">Cargando…</div>
+                    </div>
+                </div>
+
+                <!-- Vista FORMULARIO (crear / editar) -->
+                <form id="instrForm" novalidate autocomplete="off" hidden>
+                    <div id="instrFormError" class="alert alert-danger d-none" role="alert"></div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label" for="instrCategoria">Categoría *</label>
+                            <input class="form-control" type="text" id="instrCategoria" list="instrCategorias"
+                                   maxlength="80" placeholder="Ej: Servidor web" required>
+                            <datalist id="instrCategorias"></datalist>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="instrTitulo">Título *</label>
+                            <input class="form-control" type="text" id="instrTitulo" maxlength="120"
+                                   placeholder="Ej: Instalar Apache" required>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label" for="instrDescripcion">Descripción</label>
+                            <input class="form-control" type="text" id="instrDescripcion" maxlength="255"
+                                   placeholder="Qué hace la instrucción (opcional)">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label" for="instrComando">Comando *</label>
+                            <textarea class="form-control consola__instr-cmd" id="instrComando" rows="3"
+                                      placeholder="Ej: sudo apt update &amp;&amp; sudo apt install -y apache2" required></textarea>
+                            <div class="form-text">
+                                <i class="bi bi-exclamation-triangle" aria-hidden="true"></i>
+                                Se ejecutará tal cual en el shell. La contraseña de sudo la pedirá el servidor y no se guarda.
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <!-- Pie en modo LISTA -->
+                <div data-rol="pie-lista">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cerrar</button>
+                </div>
+                <!-- Pie en modo FORMULARIO -->
+                <div data-rol="pie-form" hidden>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="instrCancelar">Cancelar</button>
+                    <button type="button" class="btn btn-primary btn-sm" id="instrGuardar"><i class="bi bi-check-lg"></i> Guardar</button>
+                </div>
             </div>
         </div>
     </div>
