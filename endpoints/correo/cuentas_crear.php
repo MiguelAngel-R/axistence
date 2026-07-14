@@ -132,4 +132,16 @@ registrar_auditoria(
     ]
 );
 
+// --- Tiempo real ----------------------------------------------------
+// Avisa a los navegadores que tienen abierto el DETALLE de esta relacion de
+// correo para que agreguen la fila de la cuenta al drill-down de la licencia y
+// actualicen el contador (usadas/total) sin recargar ni volver a consultar la
+// BD. El evento viaja con cuenta_correo_id (la relacion, para filtrar por
+// detalle) y licencia_id (la licencia del drill-down), ademas de la fila de la
+// cuenta. Se emite SOLO tras el commit y la auditoria (fire-and-forget).
+notificar_socket('correo', 'cuenta:creada', array_merge($cuenta, [
+    'licencia_id'      => $licenciaId,
+    'cuenta_correo_id' => $lic['cuenta_correo_id'],
+]));
+
 json_ok(['cuenta' => $cuenta], 'Cuenta de correo creada correctamente');

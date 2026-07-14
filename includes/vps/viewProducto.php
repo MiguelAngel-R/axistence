@@ -18,6 +18,12 @@ $criticidades  = ['Información', 'Advertencia', 'Importante', 'Crítica'];
 $tiposEvento   = ['Sistema Operativo', 'Software', 'Librerías', 'Base de Datos'];
 $servidoresWeb = ['Nginx', 'Apache', 'Otro'];
 
+// URL BASE del server unico de websockets. La consola SSH usa el namespace
+// "/consola" (lo agrega vps_consola.js); los listados usan el namespace por
+// defecto del MISMO server/puerto. Sobrescribible por entorno en produccion;
+// por defecto apunta al server Node local de desarrollo (puerto unificado).
+$consolaWsUrl = getenv('AXISTENCE_CONSOLA_WS_URL') ?: 'http://127.0.0.1:3002';
+
 // Definicion de pestañas (orden estricto). 'add' define el boton "Agregar".
 $tabs = [
     ['id' => 'informacion',  'label' => 'Información',      'icon' => 'bi-info-circle'],
@@ -28,6 +34,7 @@ $tabs = [
     ['id' => 'virtualhosts', 'label' => 'Virtual Hosts',    'icon' => 'bi-diagram-3',     'tbody' => 'detVirtualHosts', 'cols' => ['Aplicación', 'ServerName', 'Dominio', 'Servidor', 'Puerto', 'SSL', 'Estado'], 'add' => ['btn' => 'btnAddVirtualHost', 'texto' => 'Agregar virtual host']],
     ['id' => 'historial',    'label' => 'Historial',        'icon' => 'bi-clock-history', 'tbody' => 'detLogs',         'cols' => ['Fecha', 'Usuario', 'Acción', 'Módulo', 'Detalle']],
     ['id' => 'notas',        'label' => 'Notas',            'icon' => 'bi-journal-text',  'tbody' => 'detNotas',        'cols' => ['Fecha', 'Criticidad', 'Autor', 'Nota'],                             'add' => ['btn' => 'btnAddNota',        'texto' => 'Agregar nota']],
+    ['id' => 'consola',      'label' => 'Consola SSH',      'icon' => 'bi-terminal'],
 ];
 ?>
 <div id="vistaDetalle" class="d-none">
@@ -134,6 +141,64 @@ $tabs = [
                             <div><dt>Registrado</dt><dd id="detCreado">—</dd></div>
                             <div><dt>Actualizado</dt><dd id="detActualizado">—</dd></div>
                         </dl>
+
+                    <?php elseif ($t['id'] === 'consola'): ?>
+                        <!-- Tab Consola SSH: terminal en tiempo real (xterm.js) +
+                             panel lateral con el historial de comandos por sesion.
+                             La conexion SSH la mantiene el server Node (websockets);
+                             aqui solo se pide el token y se abre el socket. -->
+                        <div class="consola" data-ws="<?php echo htmlspecialchars($consolaWsUrl); ?>">
+                            <div class="consola__barra">
+                                <label class="consola__campo">
+                                    <span>Credencial</span>
+                                    <select id="consolaCredencial" class="form-select form-select-sm">
+                                        <option value="">— Sin credenciales —</option>
+                                    </select>
+                                </label>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" id="consolaAddCred"
+                                        title="Agregar credencial SSH">
+                                    <i class="bi bi-plus-lg" aria-hidden="true"></i> Credencial
+                                </button>
+                                <button type="button" class="btn btn-primary btn-sm" id="consolaConectar">
+                                    <i class="bi bi-plug" aria-hidden="true"></i> Conectar
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" id="consolaDesconectar" disabled>
+                                    <i class="bi bi-x-circle" aria-hidden="true"></i> Desconectar
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" id="consolaInstrucciones"
+                                        title="Instrucciones rápidas (crear y ejecutar comandos)">
+                                    <i class="bi bi-lightning-charge" aria-hidden="true"></i> Instrucciones
+                                </button>
+                                <span class="consola__estado" id="consolaEstado" data-estado="off">Desconectado</span>
+                            </div>
+
+                            <div class="consola__cuerpo">
+                                <div class="consola__principal">
+                                    <div class="consola__term" id="consolaTerminal"></div>
+                                    <!-- Autocompletar: sugerencias del historial de este
+                                         VPS mientras se escribe. Tab (o clic) completa. -->
+                                    <div class="consola__sugerencias" id="consolaSugerencias" hidden>
+                                        <div class="consola__sug-titulo">
+                                            <span><i class="bi bi-lightbulb" aria-hidden="true"></i> Sugerencias del historial</span>
+                                            <span><kbd>Tab</kbd> completa · <kbd>↑</kbd><kbd>↓</kbd> elige</span>
+                                        </div>
+                                        <ul class="consola__sug-lista" id="consolaSugLista"></ul>
+                                    </div>
+                                </div>
+                                <aside class="consola__lateral">
+                                    <div class="consola__lateral-head">
+                                        <span><i class="bi bi-clock-history" aria-hidden="true"></i> Historial</span>
+                                        <button type="button" class="btn btn-icon btn-sm" id="consolaRefrescar" title="Refrescar historial">
+                                            <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
+                                        </button>
+                                    </div>
+                                    <ul class="consola__sesiones" id="consolaSesiones">
+                                        <li class="consola__vacio">Sin sesiones.</li>
+                                    </ul>
+                                    <div class="consola__comandos" id="consolaComandos"></div>
+                                </aside>
+                            </div>
+                        </div>
 
                     <?php elseif ($t['id'] === 'inventario'): ?>
                         <!-- Tab Inventario Lógico dividido en subtabs:
@@ -508,6 +573,152 @@ $tabs = [
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
                 <button type="button" class="btn btn-primary btn-sm" id="btnGuardarAddSsl"><i class="bi bi-check-lg"></i> Guardar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Agregar credencial SSH (para la consola). El secreto se cifra en el
+     backend (consola_credenciales.php); aqui nunca se muestra el guardado. -->
+<div class="modal fade" id="modalAddCredencial" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title h6">Agregar credencial SSH</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <div id="formAddCredError" class="alert alert-danger d-none" role="alert"></div>
+                <form id="formAddCred" novalidate autocomplete="off">
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <label class="form-label" for="acEtiqueta">Etiqueta</label>
+                            <input class="form-control" type="text" id="acEtiqueta" maxlength="120"
+                                   placeholder="Ej: root produccion">
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label" for="acHost">Host / IP *</label>
+                            <input class="form-control" type="text" id="acHost" maxlength="255" placeholder="1.2.3.4 o servidor.com" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label" for="acPuerto">Puerto *</label>
+                            <input class="form-control" type="number" id="acPuerto" min="1" max="65535" value="22" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="acUsuario">Usuario *</label>
+                            <input class="form-control" type="text" id="acUsuario" maxlength="100" placeholder="root, ubuntu…" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="acTipoAuth">Tipo de autenticación *</label>
+                            <select class="form-select" id="acTipoAuth">
+                                <option value="password">Contraseña</option>
+                                <option value="clave_privada">Clave privada</option>
+                            </select>
+                        </div>
+
+                        <!-- Autenticación por contraseña -->
+                        <div class="col-12" data-rol="campo-password">
+                            <label class="form-label" for="acPassword">Contraseña *</label>
+                            <input class="form-control" type="password" id="acPassword" autocomplete="new-password">
+                        </div>
+
+                        <!-- Autenticación por clave privada -->
+                        <div class="col-12 d-none" data-rol="campo-clave">
+                            <label class="form-label" for="acClave">Clave privada *</label>
+                            <textarea class="form-control consola__clave" id="acClave" rows="6"
+                                      placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;…&#10;-----END OPENSSH PRIVATE KEY-----"></textarea>
+                        </div>
+                        <div class="col-12 d-none" data-rol="campo-clave">
+                            <label class="form-label" for="acPassphrase">Passphrase de la clave (opcional)</label>
+                            <input class="form-control" type="password" id="acPassphrase" autocomplete="new-password">
+                        </div>
+                    </div>
+                    <div class="form-text mt-2">
+                        <i class="bi bi-shield-lock" aria-hidden="true"></i>
+                        El secreto se guarda cifrado (AES-256-GCM); nunca se almacena en texto plano.
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary btn-sm" id="btnGuardarAddCred"><i class="bi bi-check-lg"></i> Guardar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal "Instrucciones rapidas": catalogo CONFIGURABLE de comandos. Dos vistas
+     dentro del mismo modal (las alterna vps_consola.js):
+       - LISTA: instrucciones agrupadas por categoria; cada una con acciones
+         ejecutar (▶, corre en la terminal), editar (✎) y eliminar (×).
+       - FORMULARIO: crear/editar una instruccion (categoria, titulo, descripcion,
+         comando). Los datos salen de consola_instrucciones.php (GET/POST/DELETE). -->
+<div class="modal fade" id="modalInstrucciones" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title h6"><i class="bi bi-lightning-charge" aria-hidden="true"></i> Instrucciones rápidas</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Vista LISTA -->
+                <div id="instrVista">
+                    <div class="consola__instr-top">
+                        <p class="form-text mt-0 mb-0">
+                            <i class="bi bi-info-circle" aria-hidden="true"></i>
+                            <i class="bi bi-play-fill" aria-hidden="true"></i> ejecuta de inmediato en la terminal conectada.
+                        </p>
+                        <button type="button" class="btn btn-primary btn-sm" id="instrNueva">
+                            <i class="bi bi-plus-lg" aria-hidden="true"></i> Nueva instrucción
+                        </button>
+                    </div>
+                    <div id="instrLista" class="consola__instr">
+                        <div class="consola__cargando">Cargando…</div>
+                    </div>
+                </div>
+
+                <!-- Vista FORMULARIO (crear / editar) -->
+                <form id="instrForm" novalidate autocomplete="off" hidden>
+                    <div id="instrFormError" class="alert alert-danger d-none" role="alert"></div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label" for="instrCategoria">Categoría *</label>
+                            <input class="form-control" type="text" id="instrCategoria" list="instrCategorias"
+                                   maxlength="80" placeholder="Ej: Servidor web" required>
+                            <datalist id="instrCategorias"></datalist>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="instrTitulo">Título *</label>
+                            <input class="form-control" type="text" id="instrTitulo" maxlength="120"
+                                   placeholder="Ej: Instalar Apache" required>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label" for="instrDescripcion">Descripción</label>
+                            <input class="form-control" type="text" id="instrDescripcion" maxlength="255"
+                                   placeholder="Qué hace la instrucción (opcional)">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label" for="instrComando">Comando *</label>
+                            <textarea class="form-control consola__instr-cmd" id="instrComando" rows="3"
+                                      placeholder="Ej: sudo apt update &amp;&amp; sudo apt install -y apache2" required></textarea>
+                            <div class="form-text">
+                                <i class="bi bi-exclamation-triangle" aria-hidden="true"></i>
+                                Se ejecutará tal cual en el shell. La contraseña de sudo la pedirá el servidor y no se guarda.
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <!-- Pie en modo LISTA -->
+                <div data-rol="pie-lista">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cerrar</button>
+                </div>
+                <!-- Pie en modo FORMULARIO -->
+                <div data-rol="pie-form" hidden>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="instrCancelar">Cancelar</button>
+                    <button type="button" class="btn btn-primary btn-sm" id="instrGuardar"><i class="bi bi-check-lg"></i> Guardar</button>
+                </div>
             </div>
         </div>
     </div>

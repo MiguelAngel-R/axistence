@@ -16,6 +16,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config/bootstrap.php';
 require_once __DIR__ . '/_referencia.php';
+require_once __DIR__ . '/_fila.php';
 
 solo_metodo('POST');
 requiere_permiso('VPS', 'editar');
@@ -128,5 +129,14 @@ registrar_auditoria(
         'fecha_vencimiento' => $vencimiento,
     ]
 );
+
+// --- Tiempo real ----------------------------------------------------
+// Se avisa a los navegadores para que reemplacen la fila sin recargar. El
+// evento viaja con la fila completa ya actualizada (no se consulta la BD en
+// el cliente). Se emite tras el commit y la auditoria.
+$fila = vps_fila_por_id($pdo, $id);
+if ($fila) {
+    notificar_socket('vps', 'vps:actualizado', $fila);
+}
 
 json_ok(['id' => $id], 'VPS actualizado correctamente');

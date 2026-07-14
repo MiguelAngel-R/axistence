@@ -62,6 +62,21 @@ if (!isset($vistas[$vista]) || !is_file($vistas[$vista])) {
 if ($vista === 'proyectos') {
     $libsJs[] = 'https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.2/Sortable.min.js';
 }
+// La consola SSH del detalle de VPS usa xterm.js (terminal en el navegador),
+// su addon de ajuste y el cliente de Socket.IO. Solo se cargan en el modulo VPS.
+if ($vista === 'vps') {
+    $libsCss[] = 'https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css';
+    $libsJs[]  = 'https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js';
+    $libsJs[]  = 'https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js';
+    $libsJs[]  = 'https://cdn.jsdelivr.net/npm/socket.io-client@4.8.1/dist/socket.io.min.js';
+}
+
+// Los listados con tiempo real usan Socket.IO (la tabla se actualiza sin
+// recargar cuando se crea/edita/elimina). Se agregan aqui a medida que cada
+// modulo estrena el tiempo real.
+if (in_array($vista, ['clientes', 'proveedores', 'dominios', 'ssl', 'correo', 'proyectos'], true)) {
+    $libsJs[] = 'https://cdn.jsdelivr.net/npm/socket.io-client@4.8.1/dist/socket.io.min.js';
+}
 
 // Proteccion: vista privada sin sesion -> al login.
 if (in_array($vista, $requiereAuth, true) && !$autenticado) {

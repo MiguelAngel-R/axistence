@@ -6,7 +6,7 @@
    Lo rellena correo.js desde endpoints/correo/ver.php.
    --------------------------------------------------------------------- */
 $tabs = [
-    ['id' => 'extensiones', 'label' => 'Extensiones de espacio', 'icon' => 'bi-hdd-stack',   'tbody' => 'detExtensiones', 'cols' => ['Cuenta', 'Correo', 'Licencia', 'Extensión', 'Adquirida']],
+    ['id' => 'extensiones', 'label' => 'Complementos',           'icon' => 'bi-hdd-stack',   'tbody' => 'detExtensiones', 'cols' => ['Licencia', 'Complemento', 'Cantidad de cuentas', 'Disponibles', 'Valor', 'Fecha de inicio']],
     ['id' => 'licencias',   'label' => 'Licencias',              'icon' => 'bi-key',          'tbody' => 'detLicencias',   'cols' => ['Tipo de licencia', 'Cantidad de cuentas', 'Creadas']],
     ['id' => 'notas',       'label' => 'Notas',                  'icon' => 'bi-journal-text', 'tbody' => 'detNotas',       'cols' => ['Fecha', 'Autor', 'Nota']],
 ];
@@ -86,20 +86,20 @@ $tabs = [
         <div class="tab-content detalle-tabs__content" id="detTabsContent">
             <?php foreach ($tabs as $i => $t): ?>
                 <?php $esLicencias = ($t['id'] === 'licencias'); ?>
+                <?php $esClicable  = in_array($t['id'], ['licencias', 'extensiones'], true); ?>
                 <div class="tab-pane fade<?php echo $i === 0 ? ' show active' : ''; ?>"
                      id="pane-<?php echo $t['id']; ?>" role="tabpanel"
                      aria-labelledby="tabbtn-<?php echo $t['id']; ?>">
                     <?php if ($t['id'] === 'extensiones'): ?>
-                        <!-- Boton para asignar una extension de espacio. Maqueta:
-                             solo abre el modal; la asignacion aun no se programa. -->
+                        <!-- Boton para asignar un complemento a una licencia. -->
                         <div class="detalle-tab-acciones">
                             <button type="button" class="btn btn-primary btn-sm" id="btnAsignarExtension">
-                                <i class="bi bi-plus-lg" aria-hidden="true"></i> Asignar extensión de espacio
+                                <i class="bi bi-plus-lg" aria-hidden="true"></i> Asignar complemento
                             </button>
                         </div>
                     <?php endif; ?>
                     <div class="tabla-wrap" id="wrap-<?php echo $t['id']; ?>">
-                        <table class="table tabla<?php echo $esLicencias ? ' tabla--clic' : ''; ?>">
+                        <table class="table tabla<?php echo $esClicable ? ' tabla--clic' : ''; ?>">
                             <thead>
                                 <tr>
                                     <?php foreach ($t['cols'] as $col): ?>

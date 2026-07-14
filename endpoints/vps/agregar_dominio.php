@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config/bootstrap.php';
 require_once __DIR__ . '/_detalle.php';
+require_once __DIR__ . '/../dominios/_fila_socket.php';
 
 solo_metodo('POST');
 requiere_permiso('VPS', 'editar');
@@ -83,5 +84,19 @@ try {
 
 auditar_en_vps($vpsId, 'Agrego el dominio ' . $nombre . ' al servidor ' . $ref,
     ['nombre_dominio' => $nombre, 'proveedor_id' => $proveedor, 'fecha_vencimiento' => $fVen]);
+
+// --- Tiempo real ----------------------------------------------------
+// Un dominio creado desde el detalle del VPS impacta DOS vistas; se reconsulta
+// UNA vez con la forma exacta del listado de dominios (helper compartido) y se
+// reparten dos eventos (fire-and-forget, nunca rompen la operacion):
+//   * 'dominios' / 'dominio:creado'      -> lo pinta el LISTADO del modulo
+//     Dominios (mismo evento/forma que dominios/crear.php; sin tocar su JS).
+//   * 'vps' / 'dominio_vps:creado'       -> lo agrega a la tabla de Dominios del
+//     DETALLE (viewProducto) de quien tenga abierto ESTE VPS (trae vps_id).
+$filaDom = fila_dominio_socket($pdo, (string)$id);
+if ($filaDom) {
+    notificar_socket('dominios', 'dominio:creado', $filaDom);
+    notificar_socket('vps', 'dominio_vps:creado', $filaDom);
+}
 
 json_ok(['id' => $id], 'Dominio agregado correctamente');

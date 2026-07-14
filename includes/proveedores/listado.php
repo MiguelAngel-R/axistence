@@ -18,6 +18,11 @@ $jsPagina  = ['assets/js/proveedores.js'];
 // Tipos de producto que un proveedor puede ofrecer (enum tipo_producto_enum).
 $tiposProducto = ['Dominios', 'VPS', 'SSL', 'Correo', 'Hosting', 'Otros'];
 
+// URL PUBLICA del server de sockets (tiempo real). El navegador la usa para
+// conectarse; en produccion se sobreescribe por entorno (debe ser wss:// si el
+// sitio va por HTTPS). Es distinta de la interna PHP->Node (SOCKETS_URL).
+$socketsWsUrl = getenv('AXISTENCE_SOCKETS_URL_PUBLICA') ?: 'http://127.0.0.1:3002';
+
 require __DIR__ . '/../layout/app_header.php';
 ?>
 
@@ -34,8 +39,8 @@ require __DIR__ . '/../layout/app_header.php';
     </div>
 </div>
 
-<!-- Vista de listado (tabla) -->
-<div id="vistaListado">
+<!-- Vista de listado (tabla). data-ws = URL del server de sockets (tiempo real). -->
+<div id="vistaListado" data-ws="<?php echo htmlspecialchars($socketsWsUrl); ?>">
     <div class="tabla-wrap">
         <table class="table tabla">
             <thead>

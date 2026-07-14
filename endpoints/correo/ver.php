@@ -55,20 +55,21 @@ $stmt = $pdo->prepare(
 $stmt->execute([':id' => $id]);
 $licencias = $stmt->fetchAll();
 
-// --- Extensiones de espacio (con la cuenta y su licencia) -----------
+// --- Complementos (por licencia) de la relacion ---------------------
+// usadas = cuentas que ya tienen el complemento asignado (para calcular el
+// cupo disponible en el listado: cantidad_cuentas - usadas).
 $stmt = $pdo->prepare(
-    'SELECT e.id, e.gigas_adicionales, e.fecha_adquisicion,
-            e.precio_compra_extension, e.precio_venta_extension,
-            cu.nombre AS cuenta_nombre, cu.apellidos AS cuenta_apellidos,
-            cu.correo AS cuenta_correo, l.tipo_licencia
+    'SELECT e.id, e.nombre, e.cantidad_cuentas, e.valor, e.fecha_inicio,
+            e.licencia_id, l.tipo_licencia,
+            (SELECT COUNT(*) FROM public.correo_complemento_cuentas ac
+              WHERE ac.complemento_id = e.id) AS usadas
        FROM public.correo_extensiones_espacio e
-       LEFT JOIN public.correo_licencia_cuentas cu ON cu.id = e.cuenta_id
-       LEFT JOIN public.correo_licencias l         ON l.id = cu.licencia_id
+       LEFT JOIN public.correo_licencias l ON l.id = e.licencia_id
       WHERE e.cuenta_correo_id = :id
-      ORDER BY e.fecha_adquisicion DESC, e.created_at DESC'
+      ORDER BY e.fecha_inicio DESC, e.created_at DESC'
 );
 $stmt->execute([':id' => $id]);
-$extensiones = $stmt->fetchAll();
+$complementos = $stmt->fetchAll();
 
 // --- Notas (con autor) ----------------------------------------------
 $stmt = $pdo->prepare(
@@ -82,8 +83,8 @@ $stmt->execute([':id' => $id]);
 $notas = $stmt->fetchAll();
 
 json_ok([
-    'cuenta'      => $cuenta,
-    'licencias'   => $licencias,
-    'extensiones' => $extensiones,
-    'notas'       => $notas,
+    'cuenta'       => $cuenta,
+    'licencias'    => $licencias,
+    'complementos' => $complementos,
+    'notas'        => $notas,
 ]);

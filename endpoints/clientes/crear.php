@@ -37,7 +37,7 @@ $stmt = $pdo->prepare(
      VALUES
         (:tipo_cliente, :razon_social, :nombres, :apellidos, :nombre_razon_social,
          :tipo_ident, :num_ident, :email, :telefono, :direccion, :estado)
-     RETURNING id'
+     RETURNING id, created_at'
 );
 $stmt->execute([
     ':tipo_cliente'        => $datos['tipo_cliente'],
@@ -52,7 +52,8 @@ $stmt->execute([
     ':direccion'           => $datos['direccion'],
     ':estado'              => $datos['estado'],
 ]);
-$id = $stmt->fetchColumn();
+$fila = $stmt->fetch(PDO::FETCH_ASSOC);
+$id   = $fila['id'];
 
 // --- Auditoria (trazabilidad obligatoria) ---------------------------
 registrar_auditoria(
@@ -63,5 +64,14 @@ registrar_auditoria(
     null,
     $datos
 );
+
+// --- Tiempo real ----------------------------------------------------
+// Se avisa a los navegadores que tienen el listado abierto para que inserten
+// la fila sin recargar. Se emite SOLO tras el commit y la auditoria: el evento
+// viaja con los datos de la fila para no volver a consultar la BD en el cliente.
+notificar_socket('clientes', 'cliente:creado', array_merge($datos, [
+    'id'         => $id,
+    'created_at' => $fila['created_at'],
+]));
 
 json_ok(['id' => $id], 'Cliente creado correctamente');

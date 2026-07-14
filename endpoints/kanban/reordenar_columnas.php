@@ -58,4 +58,16 @@ registrar_auditoria(
     ['orden' => $orden]
 );
 
+// --- Tiempo real ----------------------------------------------------
+// Avisa a los navegadores que tienen abierto el tablero de este proyecto para
+// que reordenen las columnas sin recargar, reinsertando cada columna segun
+// 'orden'. El evento viaja con proyecto_id (para filtrar por detalle) y el nuevo
+// orden de ids de columna. Es idempotente: aplicar el mismo orden deja el mismo
+// estado (el propio actor, que ya reordeno en su DOM, lo reaplica sin efecto).
+// Se emite SOLO tras el commit y la auditoria (fire-and-forget).
+notificar_socket('proyectos', 'columnas:reordenadas', [
+    'proyecto_id' => $proyectoId,
+    'orden'       => $orden,
+]);
+
 json_ok(['orden' => $orden], 'Columnas reordenadas');

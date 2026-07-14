@@ -14,6 +14,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config/bootstrap.php';
 require_once __DIR__ . '/_detalle.php';
+require_once __DIR__ . '/_fila_virtualhost.php';
 
 solo_metodo('POST');
 requiere_permiso('VPS', 'editar');
@@ -106,5 +107,16 @@ try {
 
 auditar_en_vps($vpsId, 'Agrego el virtual host ' . $aplicacion . ' (' . $serverName . ') en ' . $ref,
     ['aplicacion' => $aplicacion, 'server_name' => $serverName, 'servidor_web' => $servidorWeb, 'puerto' => (int)$puerto]);
+
+// --- Tiempo real ----------------------------------------------------
+// Como el Inventario Logico, el Virtual Host NO tiene modulo propio: solo
+// impacta la pestaña Virtual Hosts del detalle del VPS. Se reconsulta la fila
+// con la forma exacta que pinta ese tab (helper compartido: resuelve el nombre
+// del dominio) y se reparte UN evento a la sala 'vps' (fire-and-forget, nunca
+// rompe la operacion). Cada navegador decide si le corresponde por el vps_id.
+$filaVh = fila_virtualhost_socket($pdo, (string)$id);
+if ($filaVh) {
+    notificar_socket('vps', 'virtualhost_vps:creado', $filaVh);
+}
 
 json_ok(['id' => $id], 'Virtual Host agregado correctamente');

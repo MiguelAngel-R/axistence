@@ -55,4 +55,10 @@ registrar_auditoria(
     null
 );
 
+// --- Tiempo real ----------------------------------------------------
+// Se avisa a los navegadores que tienen el listado abierto para que quiten la
+// fila sin recargar. Solo viaja el id (basta para localizar y quitar la fila).
+// Se emite SOLO tras el borrado y la auditoria.
+notificar_socket('proveedores', 'proveedor:eliminado', ['id' => $id]);
+
 json_ok(['id' => $id], 'Proveedor eliminado correctamente');

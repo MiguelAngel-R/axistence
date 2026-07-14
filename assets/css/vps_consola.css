@@ -1,0 +1,333 @@
+/* =====================================================================
+   Modulo: VPS / Consola SSH (pestaña del detalle).
+   Estetica AXISTENCE: monocromo slate, marcos rectos (radius 0), limpio.
+   Terminal (xterm) a la izquierda + panel lateral de historial a la derecha.
+   ===================================================================== */
+
+.consola {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    /* El contenedor de pestañas (.detalle-tabs__content) se sale 24px a cada
+       lado (margin negativo) para que las TABLAS ocupen todo el ancho. La
+       consola no es una tabla, así que reinserta esos 24px para alinearse con
+       la línea divisoria de las pestañas (igual que la pestaña Información). */
+    padding: 0 var(--space-5) var(--space-5);
+}
+
+/* --- Barra superior: credencial + acciones + estado ----------------- */
+.consola__barra {
+    display: flex;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    padding-bottom: var(--space-2);
+    border-bottom: 1px solid var(--c-line);
+}
+
+.consola__campo {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: .75rem;
+    color: var(--c-text-muted);
+}
+.consola__campo select {
+    min-width: 260px;
+}
+
+.consola__estado {
+    margin-left: auto;
+    align-self: center;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: .8rem;
+    font-weight: 600;
+    padding: 4px 10px;
+    border: 1px solid var(--c-border);
+    background: var(--c-surface-alt);
+    color: var(--c-text-muted);
+    white-space: nowrap;
+}
+.consola__estado::before {
+    content: "";
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--c-text-faint);
+}
+.consola__estado[data-estado="on"]    { color: var(--c-success); border-color: var(--c-success); }
+.consola__estado[data-estado="on"]::before    { background: var(--c-success); }
+.consola__estado[data-estado="error"] { color: var(--c-danger); border-color: var(--c-danger); }
+.consola__estado[data-estado="error"]::before { background: var(--c-danger); }
+.consola__estado[data-estado="wait"]  { color: var(--c-brand); border-color: var(--c-border-strong); }
+.consola__estado[data-estado="wait"]::before  { background: var(--c-brand); animation: consolaPulse 1s infinite; }
+
+@keyframes consolaPulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+
+/* --- Cuerpo: terminal + lateral ------------------------------------ */
+.consola__cuerpo {
+    display: grid;
+    grid-template-columns: 1fr 300px;
+    gap: var(--space-3);
+    align-items: stretch;
+    min-height: 420px;
+}
+
+/* Columna izquierda: terminal + panel de sugerencias apilados. */
+.consola__principal {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.consola__term {
+    height: 460px;
+    background: #0f172a;             /* slate 900: fondo de la terminal */
+    border: 1px solid var(--c-brand);
+    padding: 6px 8px;
+    overflow: hidden;
+}
+/* xterm ocupa todo el contenedor */
+.consola__term .xterm,
+.consola__term .xterm-viewport,
+.consola__term .xterm-screen { height: 100% !important; }
+.consola__term .xterm-viewport::-webkit-scrollbar { width: 10px; }
+.consola__term .xterm-viewport::-webkit-scrollbar-thumb { background: #334155; }
+
+/* --- Autocompletar: panel de sugerencias bajo la terminal ----------- */
+.consola__sugerencias {
+    display: flex;
+    flex-direction: column;
+    max-height: 200px;
+    background: #0f172a;             /* mismo fondo: se ve pegado a la terminal */
+    border: 1px solid var(--c-brand);
+    border-top: none;
+    color: #e2e8f0;
+}
+.consola__sugerencias[hidden] { display: none; }   /* gana al display:flex */
+
+.consola__sug-titulo {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--space-2);
+    padding: 5px 10px;
+    font-size: .68rem;
+    letter-spacing: .03em;
+    text-transform: uppercase;
+    color: #94a3b8;
+    background: #111c31;
+    border-bottom: 1px solid #1e293b;
+}
+.consola__sug-titulo kbd {
+    font-family: "Cascadia Code", "Consolas", monospace;
+    font-size: .68rem;
+    padding: 0 4px;
+    margin: 0 1px;
+    color: #cbd5e1;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 0;
+}
+
+.consola__sug-lista {
+    list-style: none;
+    margin: 0;
+    padding: 4px 0;
+    overflow-y: auto;
+    font-family: "Cascadia Code", "Consolas", "Courier New", monospace;
+    font-size: .82rem;
+}
+.consola__sug-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 10px;
+    cursor: pointer;
+    color: #cbd5e1;
+}
+.consola__sug-item:hover     { background: #1e293b; }
+.consola__sug-item.is-active { background: var(--c-brand); color: #fff; }
+/* El comando va en un solo bloque (sin gap interno); aquí se trunca si es largo. */
+.consola__sug-cmd {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+/* La parte ya escrita se resalta; el resto es lo que Tab completaria. */
+.consola__sug-item .match             { color: #7dd3fc; font-weight: 600; }
+.consola__sug-item.is-active .match   { color: #fff; }
+.consola__sug-veces {
+    margin-left: auto;
+    font-size: .7rem;
+    color: #64748b;
+}
+.consola__sug-item.is-active .consola__sug-veces { color: #dbeafe; }
+.consola__sug-lista::-webkit-scrollbar { width: 10px; }
+.consola__sug-lista::-webkit-scrollbar-thumb { background: #334155; }
+
+/* --- Panel lateral: historial -------------------------------------- */
+.consola__lateral {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--c-border);
+    background: var(--c-surface);
+    min-height: 0;
+}
+.consola__lateral-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-2) var(--space-3);
+    font-size: .8rem;
+    font-weight: 600;
+    color: var(--c-text);
+    background: var(--c-surface-alt);
+    border-bottom: 1px solid var(--c-line);
+}
+
+.consola__sesiones {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 210px;
+    overflow-y: auto;
+    border-bottom: 1px solid var(--c-line);
+}
+.consola__sesion {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: 8px var(--space-3);
+    cursor: pointer;
+    border-bottom: 1px solid var(--c-line);
+    transition: background var(--t-fast);
+}
+.consola__sesion:hover     { background: var(--c-surface-alt); }
+.consola__sesion.is-active { background: #eef2f7; box-shadow: inset 3px 0 0 var(--c-brand); }
+.consola__sesion-ico { font-size: .7rem; color: var(--c-text-faint); }
+.consola__sesion-ico[data-estado="activa"] { color: var(--c-success); }
+.consola__sesion-ico[data-estado="error"]  { color: var(--c-danger); }
+.consola__sesion-info { display: flex; flex-direction: column; line-height: 1.25; overflow: hidden; }
+.consola__sesion-info b     { font-size: .82rem; font-weight: 600; }
+.consola__sesion-info small { font-size: .72rem; color: var(--c-text-muted); }
+
+.consola__comandos {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--space-2) var(--space-3);
+    min-height: 120px;
+}
+.consola__cmdlist {
+    margin: 0;
+    padding-left: 1.4em;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.consola__cmdlist code {
+    color: var(--c-text);
+    background: var(--c-surface-alt);
+    border: 1px solid var(--c-line);
+    padding: 1px 6px;
+    display: inline-block;
+    word-break: break-all;
+}
+
+.consola__vacio,
+.consola__cargando {
+    padding: var(--space-3);
+    font-size: .8rem;
+    color: var(--c-text-muted);
+    text-align: center;
+}
+
+/* --- Modal "Instrucciones rapidas": catalogo de comandos ------------ */
+/* Barra superior de la vista LISTA: leyenda + boton "Nueva". */
+.consola__instr-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
+    flex-wrap: wrap;
+}
+
+.consola__instr-cat {
+    font-size: .75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--c-text-muted);
+    margin: var(--space-4) 0 var(--space-2);
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--c-line);
+}
+.consola__instr-cat:first-child { margin-top: 0; }
+
+.consola__instr-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    width: 100%;
+    background: var(--c-surface);
+    border: 1px solid var(--c-line);
+    padding: var(--space-2) var(--space-3);
+    margin-bottom: 6px;
+    transition: border-color .12s;
+}
+.consola__instr-item:hover { border-color: var(--c-text-muted); }
+
+.consola__instr-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+}
+.consola__instr-info b { font-size: .85rem; color: var(--c-text); }
+.consola__instr-info small { font-size: .75rem; color: var(--c-text-muted); }
+.consola__instr-info code {
+    font-family: "Cascadia Code", "Consolas", "Courier New", monospace;
+    font-size: .72rem;
+    color: var(--c-text);
+    background: var(--c-surface-alt);
+    border: 1px solid var(--c-line);
+    padding: 1px 6px;
+    margin-top: 2px;
+    align-self: flex-start;
+    max-width: 100%;
+    word-break: break-all;
+}
+
+/* Acciones por instruccion: ejecutar / editar / eliminar. */
+.consola__instr-acc {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 2px;
+}
+.consola__instr-acc [data-accion="ejecutar"] { color: var(--c-ok, #16a34a); }
+.consola__instr-acc [data-accion="eliminar"]:hover { color: var(--c-danger, #dc2626); }
+
+/* Textarea del comando en el formulario: monoespaciada. */
+.consola__instr-cmd {
+    font-family: "Cascadia Code", "Consolas", "Courier New", monospace;
+    font-size: .8rem;
+}
+
+/* --- Modal "Agregar credencial": clave privada monoespaciada -------- */
+.consola__clave {
+    font-family: "Cascadia Code", "Consolas", "Courier New", monospace;
+    font-size: .8rem;
+    white-space: pre;
+    overflow-wrap: normal;
+}
+
+/* --- Responsivo: el lateral baja bajo la terminal ------------------ */
+@media (max-width: 900px) {
+    .consola__cuerpo { grid-template-columns: 1fr; }
+    .consola__term { height: 360px; }
+    .consola__estado { margin-left: 0; }
+}
