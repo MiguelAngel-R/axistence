@@ -5,7 +5,13 @@ declare(strict_types=1);
 //  AXISTENCE - Configuracion global
 //  Los valores pueden sobreescribirse por variables de entorno para no
 //  exponer credenciales en el codigo (recomendado en produccion).
+//
+//  Antes de leer nada con getenv(), se carga el .env (si existe) para que
+//  todas las variables esten disponibles. Es la misma fuente de verdad que
+//  usa el server Node (node --env-file). Ver endpoints/config/env.php.
 // =====================================================================
+
+require_once __DIR__ . '/env.php';
 
 define('DB_HOST', getenv('AXISTENCE_DB_HOST') ?: 'localhost');
 define('DB_PORT', getenv('AXISTENCE_DB_PORT') ?: '5432');
