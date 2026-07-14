@@ -6,6 +6,9 @@
    Ademas protege las vistas que requieren sesion iniciada.
    ===================================================================== */
 
+// Carga el .env (si existe) antes que nada, para que las vistas que leen
+// getenv() (p. ej. la URL publica del server de sockets) tengan los valores.
+require_once __DIR__ . '/endpoints/config/env.php';
 require_once __DIR__ . '/endpoints/config/session.php';
 iniciar_sesion_axistence();
 
