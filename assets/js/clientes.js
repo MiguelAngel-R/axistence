@@ -31,7 +31,6 @@ $(function () {
     var modo = "crear";      // "crear" | "editar"
     var editandoId = null;   // id del cliente en edicion
     var detalleId = null;    // id del cliente mostrado en el detalle
-    var dropFechas = null;   // controlador del dropdown de fechas (general.js)
     var modalCliente = AX.modal("#modalCliente");
     var modalProyectoCli = AX.modal("#modalProyectoCliente");
     var modalContacto = AX.modal("#modalContacto");
@@ -421,7 +420,6 @@ $(function () {
         if (payload.es_contacto_principal) { desmarcarContactosPrincipales($cuerpo); }
         $cuerpo.find(".tabla-vacia").closest("tr").remove(); // quita el placeholder "vacio"
         $cuerpo.append(filaContacto(payload));
-        aplicarFiltrosDetalle(); // respeta el filtro/busqueda vigente en la pestaña
     }
 
     // Edicion de contacto en vivo: reemplaza la fila si el detalle abierto es el
@@ -438,7 +436,6 @@ $(function () {
         $fila.replaceWith(filaContacto(payload));
         // Si ahora es principal, los demas dejan de serlo (solo uno principal).
         if (payload.es_contacto_principal) { desmarcarContactosPrincipales($cuerpo, payload.id); }
-        aplicarFiltrosDetalle(); // respeta el filtro/busqueda vigente en la pestaña
     }
 
     function conectarSocketClientes() {
@@ -470,34 +467,12 @@ $(function () {
         $(".toolbar").toggleClass("d-none", $vista[0] !== $vistaListado[0]);
     }
 
-    // <tbody> de la tabla de la pestana activa (para aplicar el filtro).
-    function tbodyActivo() {
-        return $("#detTabsContent .tab-pane.active tbody:visible");
-    }
-
-    // Aplica el buscador dinamico + rango de fechas a la tabla activa.
-    function aplicarFiltrosDetalle() {
-        var f = dropFechas ? dropFechas.valores() : { desde: "", hasta: "" };
-        AX.filtrarTabla(tbodyActivo(), { texto: $("#detBuscar").val(), desde: f.desde, hasta: f.hasta });
-    }
-
-    // Reinicia los filtros y vuelve a la primera pestana (al abrir un detalle).
-    function reiniciarFiltrosDetalle() {
-        $("#detBuscar").val("");
-        if (dropFechas) { dropFechas.limpiar(); }
+    // Al abrir un detalle, vuelve siempre a la primera pestana.
+    function reiniciarPestanaDetalle() {
         var primera = document.querySelector('#detTabs [data-bs-toggle="tab"]');
         if (primera && window.bootstrap && bootstrap.Tab) {
             bootstrap.Tab.getOrCreateInstance(primera).show();
         }
-    }
-
-    // Cablea (una sola vez) el buscador, el dropdown de fechas y el cambio de
-    // pestana. Reutiliza las utilidades de general.js.
-    function inicializarFiltrosDetalle() {
-        var t;
-        $("#detBuscar").on("input", function () { clearTimeout(t); t = setTimeout(aplicarFiltrosDetalle, 200); });
-        dropFechas = AX.dropdownFechas("#detFechas", { onAplicar: aplicarFiltrosDetalle, onLimpiar: aplicarFiltrosDetalle });
-        $('#detTabs [data-bs-toggle="tab"]').on("shown.bs.tab", aplicarFiltrosDetalle);
     }
 
     // Pide el detalle del cliente activo (detalleId) y lo entrega a onOk. Se usa
@@ -518,7 +493,7 @@ $(function () {
     function abrirDetalle(id) {
         detalleId = id;
         mostrar($vistaDetalle);
-        reiniciarFiltrosDetalle();
+        reiniciarPestanaDetalle();
         AX.limpiarFooter(); // sin footer en el detalle; la flecha "Volver" retorna
         window.scrollTo({ top: 0, behavior: "smooth" });
         solicitarDetalle(pintarDetalle);
@@ -640,9 +615,6 @@ $(function () {
                 "<td>" + AX.escaparHtml(x.modulo_afectado) + "</td>" +
                 "<td>" + AX.escaparHtml(x.descripcion) + "</td></tr>";
         });
-
-        // Tras (re)pintar, se aplican los filtros vigentes a la tabla activa.
-        aplicarFiltrosDetalle();
     }
 
     function volverAlListado() {
@@ -771,7 +743,6 @@ $(function () {
 
     // La flecha "Volver" del detalle (data-ax-volver) regresa al listado.
     AX.vincularVolver(volverAlListado);
-    inicializarFiltrosDetalle();
     cargar();
     conectarSocketClientes(); // tiempo real: escucha altas/ediciones/borrados
 

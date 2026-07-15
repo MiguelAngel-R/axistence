@@ -154,12 +154,18 @@ require __DIR__ . '/../layout/app_header.php';
                             <input class="form-control" type="text" id="ccApellidos" maxlength="100" required>
                         </div>
 
-                        <div class="col-12">
-                            <label class="form-label" for="ccTipoCuenta">Tipo de cuenta *</label>
-                            <select class="form-select" id="ccTipoCuenta" required>
-                                <option value="Usuario">Usuario</option>
-                                <option value="Administrador">Administrador</option>
-                            </select>
+                        <!-- Todas las cuentas se crean como "Usuario". Solo UNA cuenta
+                             por licencia puede marcarse ademas como "Administrador":
+                             este bloque se oculta desde correo.js cuando la licencia
+                             ya tiene una cuenta administradora. -->
+                        <div class="col-12" id="ccAdminWrap">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="ccEsAdmin">
+                                <label class="form-check-label" for="ccEsAdmin">
+                                    Marcar esta cuenta como administrador
+                                </label>
+                            </div>
+                            <div class="form-text">Solo puede haber una cuenta administradora por licencia.</div>
                         </div>
 
                         <div class="col-12">

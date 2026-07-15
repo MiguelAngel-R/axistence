@@ -26,7 +26,6 @@ $(function () {
     var editandoId = null;
     var detalleId = null;
     var opciones = null;       // { clientes, usuarios, dominios, vps, ssl, hosting }
-    var dropFechas = null;
     var msEquipo = null, msDominios = null, msHosting = null;
     var socketActivo = false;   // true cuando el socket de tiempo real esta conectado
 
@@ -477,35 +476,23 @@ $(function () {
     // ===============================================================
     //  Detalle (viewProyecto)
     // ===============================================================
-    function tbodyActivo() { return $("#detTabsContent .tab-pane.active tbody"); }
-
-    function aplicarFiltrosDetalle() {
-        var f = dropFechas ? dropFechas.valores() : { desde: "", hasta: "" };
-        AX.filtrarTabla(tbodyActivo(), { texto: $("#detBuscar").val(), desde: f.desde, hasta: f.hasta });
-    }
-
-    function reiniciarFiltrosDetalle() {
-        $("#detBuscar").val("");
-        if (dropFechas) { dropFechas.limpiar(); }
+    // Al abrir un detalle, vuelve siempre a la primera pestana.
+    function reiniciarPestanaDetalle() {
         var primera = document.querySelector('#detTabs [data-bs-toggle="tab"]');
         if (primera && window.bootstrap && bootstrap.Tab) { bootstrap.Tab.getOrCreateInstance(primera).show(); }
         actualizarBotonArchivadas();
     }
 
-    function inicializarFiltrosDetalle() {
-        var t;
-        $("#detBuscar").on("input", function () { clearTimeout(t); t = setTimeout(aplicarFiltrosDetalle, 200); });
-        dropFechas = AX.dropdownFechas("#detFechas", { onAplicar: aplicarFiltrosDetalle, onLimpiar: aplicarFiltrosDetalle });
-        $('#detTabs [data-bs-toggle="tab"]').on("shown.bs.tab", function () {
-            aplicarFiltrosDetalle();
-            actualizarBotonArchivadas();   // el boton "Archivadas" solo en el tablero
-        });
+    // El boton "Archivadas" solo aplica en la pestana del tablero: se recalcula al
+    // cambiar de pestana.
+    function inicializarPestanasDetalle() {
+        $('#detTabs [data-bs-toggle="tab"]').on("shown.bs.tab", actualizarBotonArchivadas);
     }
 
     function abrirDetalle(id) {
         detalleId = id;
         mostrar($vistaDetalle);
-        reiniciarFiltrosDetalle();
+        reiniciarPestanaDetalle();
         AX.limpiarFooter();
         window.scrollTo({ top: 0, behavior: "smooth" });
 
@@ -564,8 +551,6 @@ $(function () {
                    "<td>" + AX.escaparHtml(n.autor || "—") + "</td>" +
                    "<td>" + AX.escaparHtml(n.nota) + "</td></tr>";
         });
-
-        aplicarFiltrosDetalle();
     }
 
     // ===============================================================
@@ -1487,7 +1472,7 @@ $(function () {
     msEquipo   = AX.multiselect("#fpEquipo");
     msDominios = AX.multiselect("#fpDominios", { vacio: "Sin dominio" });
     msHosting  = AX.multiselect("#fpHosting", { vacio: "Sin hosting" });
-    inicializarFiltrosDetalle();
+    inicializarPestanasDetalle();
     cargar();
     conectarSocketProyectos(); // tiempo real: escucha altas/ediciones/borrados
 

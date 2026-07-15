@@ -79,30 +79,6 @@ $tabs = [
             </div>
         </section>
 
-        <!-- Barra de filtros (reutilizable): buscador dinamico + rango de fechas -->
-        <div class="detalle-filtros">
-            <div class="toolbar__search">
-                <i class="bi bi-search" aria-hidden="true"></i>
-                <input type="search" id="detBuscar" class="form-control"
-                       placeholder="Buscar en la tabla…" autocomplete="off">
-            </div>
-            <div class="ax-dropfecha" id="detFechas">
-                <button type="button" class="btn btn-outline-secondary btn-sm ax-dropfecha__toggle" data-rol="toggle">
-                    <i class="bi bi-calendar-range" aria-hidden="true"></i> Filtros
-                </button>
-                <div class="ax-dropfecha__panel d-none" data-rol="panel">
-                    <label class="ax-dropfecha__label" for="detFechaDesde">Fecha inicio</label>
-                    <input type="date" class="form-control form-control-sm" id="detFechaDesde" data-rol="desde">
-                    <label class="ax-dropfecha__label" for="detFechaHasta">Fecha final</label>
-                    <input type="date" class="form-control form-control-sm" id="detFechaHasta" data-rol="hasta">
-                    <div class="ax-dropfecha__acciones">
-                        <button type="button" class="btn btn-outline-secondary btn-sm" data-rol="limpiar">Limpiar</button>
-                        <button type="button" class="btn btn-primary btn-sm" data-rol="aplicar">Aplicar</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
         <!-- Pestañas (orden estricto) -->
         <ul class="nav nav-tabs detalle-tabs" id="detTabs" role="tablist">
             <?php foreach ($tabs as $i => $t): ?>
@@ -168,6 +144,10 @@ $tabs = [
                                 <button type="button" class="btn btn-outline-secondary btn-sm" id="consolaInstrucciones"
                                         title="Instrucciones rápidas (crear y ejecutar comandos)">
                                     <i class="bi bi-lightning-charge" aria-hidden="true"></i> Instrucciones
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" id="consolaLlaveMaestra"
+                                        title="Palabra maestra que cifra las credenciales SSH">
+                                    <i class="bi bi-key" aria-hidden="true"></i> Llave maestra
                                 </button>
                                 <span class="consola__estado" id="consolaEstado" data-estado="off">Desconectado</span>
                             </div>
@@ -642,6 +622,50 @@ $tabs = [
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
                 <button type="button" class="btn btn-primary btn-sm" id="btnGuardarAddCred"><i class="bi bi-check-lg"></i> Guardar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal "Llave maestra": palabra maestra GLOBAL que cifra las credenciales
+     SSH. NO se guarda en el sistema (ni env, ni sesion, ni BD). El modal tiene
+     dos modos que alterna vps_consola.js segun consola_llave.php GET:
+       - configurar (primera vez): solo la palabra nueva.
+       - cambiar: palabra actual + palabra nueva (rota la llave sin re-cifrar). -->
+<div class="modal fade" id="modalLlaveMaestra" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title h6" id="llaveTitulo">Configurar palabra maestra</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <div id="formLlaveError" class="alert alert-danger d-none" role="alert"></div>
+                <p class="text-muted small" id="llaveAviso"></p>
+                <form id="formLlave" novalidate autocomplete="off">
+                    <div class="row g-3">
+                        <div class="col-12 d-none" data-rol="campo-actual">
+                            <label class="form-label" for="llaveActual">Palabra maestra actual *</label>
+                            <input class="form-control" type="password" id="llaveActual" autocomplete="current-password">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label" for="llaveNueva">Palabra maestra nueva *</label>
+                            <input class="form-control" type="password" id="llaveNueva" minlength="8" autocomplete="new-password" required>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label" for="llaveRepetir">Repite la palabra nueva *</label>
+                            <input class="form-control" type="password" id="llaveRepetir" minlength="8" autocomplete="new-password" required>
+                        </div>
+                    </div>
+                    <div class="form-text mt-2">
+                        <i class="bi bi-exclamation-triangle" aria-hidden="true"></i>
+                        Esta palabra no se guarda en ningún lado. Si se olvida, las credenciales no podrán descifrarse.
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary btn-sm" id="btnGuardarLlave"><i class="bi bi-check-lg"></i> Guardar</button>
             </div>
         </div>
     </div>

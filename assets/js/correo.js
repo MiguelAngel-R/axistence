@@ -26,7 +26,6 @@ $(function () {
     var editandoId = null;
     var detalleId = null;
     var opciones = null;       // { dominios, clientes, vps }
-    var dropFechas = null;
     var licencias = [];        // [{ tipo_licencia, cantidad_cuentas }] del formulario
     var licenciasDetalle = []; // licencias de la relacion abierta en el detalle (con id)
     var socketActivo = false;   // true cuando el socket de tiempo real esta conectado
@@ -197,6 +196,8 @@ $(function () {
                 $cuerpo.append(filaCuentaLicencia(payload));
                 cuentaLic.usadas = (parseInt(cuentaLic.usadas, 10) || 0) + 1;
                 cuentaLic.disponibles = Math.max(0, cuentaLic.cantidad_cuentas - cuentaLic.usadas);
+                // Si la cuenta que llego es administradora, la licencia ya no admite otra.
+                if (payload.tipo_cuenta === "Administrador") { cuentaLic.adminExistente = true; }
                 actualizarCabeceraCuentas();
             }
         }
@@ -216,7 +217,6 @@ $(function () {
         if ($cuerpo.find('tr[data-id="' + payload.id + '"]').length) { return; } // evita duplicar
         $cuerpo.find(".tabla-vacia").closest("tr").remove();                     // quita placeholder
         $cuerpo.prepend(filaComplemento(payload));
-        aplicarFiltrosDetalle(); // respeta el filtro/busqueda vigente en la pestaña
     }
 
     // Asignacion de una cuenta a un complemento en vivo: actualiza la columna
@@ -452,31 +452,16 @@ $(function () {
     // ===============================================================
     //  Detalle (viewProducto)
     // ===============================================================
-    function tbodyActivo() { return $("#detTabsContent .tab-pane.active tbody"); }
-
-    function aplicarFiltrosDetalle() {
-        var f = dropFechas ? dropFechas.valores() : { desde: "", hasta: "" };
-        AX.filtrarTabla(tbodyActivo(), { texto: $("#detBuscar").val(), desde: f.desde, hasta: f.hasta });
-    }
-
-    function reiniciarFiltrosDetalle() {
-        $("#detBuscar").val("");
-        if (dropFechas) { dropFechas.limpiar(); }
+    // Al abrir un detalle, vuelve siempre a la primera pestaña.
+    function reiniciarPestanaDetalle() {
         var primera = document.querySelector('#detTabs [data-bs-toggle="tab"]');
         if (primera && window.bootstrap && bootstrap.Tab) { bootstrap.Tab.getOrCreateInstance(primera).show(); }
-    }
-
-    function inicializarFiltrosDetalle() {
-        var t;
-        $("#detBuscar").on("input", function () { clearTimeout(t); t = setTimeout(aplicarFiltrosDetalle, 200); });
-        dropFechas = AX.dropdownFechas("#detFechas", { onAplicar: aplicarFiltrosDetalle, onLimpiar: aplicarFiltrosDetalle });
-        $('#detTabs [data-bs-toggle="tab"]').on("shown.bs.tab", aplicarFiltrosDetalle);
     }
 
     function abrirDetalle(id) {
         detalleId = id;
         mostrar($vistaDetalle);
-        reiniciarFiltrosDetalle();
+        reiniciarPestanaDetalle();
         // Sin footer en el detalle: la flecha "Volver" es la unica accion de retorno.
         AX.limpiarFooter();
         window.scrollTo({ top: 0, behavior: "smooth" });
@@ -563,8 +548,6 @@ $(function () {
                    "<td>" + AX.escaparHtml(n.autor || "—") + "</td>" +
                    "<td>" + AX.escaparHtml(n.nota) + "</td></tr>";
         });
-
-        aplicarFiltrosDetalle();
     }
 
     // ===============================================================
@@ -627,13 +610,21 @@ $(function () {
 
     function pintarCuentasLicencia(data) {
         var lic = data.licencia || {};
+        // ¿La licencia ya tiene una cuenta administradora? Solo puede haber una,
+        // asi que si existe se ocultara el check "administrador" al crear nuevas.
+        var cuentas = data.cuentas || [];
+        var adminExistente = false;
+        for (var j = 0; j < cuentas.length; j++) {
+            if (cuentas[j].tipo_cuenta === "Administrador") { adminExistente = true; break; }
+        }
         cuentaLic = {
             id:               lic.id,
             dominio:          lic.dominio || "",
             tipo_licencia:    lic.tipo_licencia || "",
             cantidad_cuentas: parseInt(lic.cantidad_cuentas, 10) || 0,
             usadas:           parseInt(data.usadas, 10) || 0,
-            disponibles:      parseInt(data.disponibles, 10) || 0
+            disponibles:      parseInt(data.disponibles, 10) || 0,
+            adminExistente:   adminExistente
         };
 
         actualizarCabeceraCuentas();
@@ -671,7 +662,10 @@ $(function () {
         }
         AX.limpiarFormulario("#formCuentaCorreo", "#formCuentaError");
         $("#ccNombre, #ccApellidos, #ccUsuario, #ccClave").val("");
-        $("#ccTipoCuenta").val("Usuario");
+        // Todas las cuentas se crean como "Usuario"; el check solo se ofrece si la
+        // licencia aun no tiene una cuenta administradora (solo puede haber una).
+        $("#ccEsAdmin").prop("checked", false);
+        $("#ccAdminWrap").toggleClass("d-none", !!(cuentaLic && cuentaLic.adminExistente));
         $("#ccClave").attr("type", "password");
         $("#ccVerClave i").removeClass("bi-eye-slash").addClass("bi-eye");
         $("#ccDominioSufijo").text("@" + (cuentaLic.dominio || ""));
@@ -688,7 +682,7 @@ $(function () {
             licencia_id:    cuentaLic.id,
             nombre:         $.trim($("#ccNombre").val()),
             apellidos:      $.trim($("#ccApellidos").val()),
-            tipo_cuenta:    $("#ccTipoCuenta").val(),
+            tipo_cuenta:    $("#ccEsAdmin").is(":checked") ? "Administrador" : "Usuario",
             usuario_correo: $.trim($("#ccUsuario").val()),
             clave:          $("#ccClave").val()
         };
@@ -1056,7 +1050,6 @@ $(function () {
         if (reg) { abrirDetalle(reg.id); }
     });
 
-    inicializarFiltrosDetalle();
     cargar();
     conectarSocketCorreo(); // tiempo real: escucha altas/ediciones/borrados
 

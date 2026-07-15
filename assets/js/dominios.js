@@ -22,7 +22,6 @@ $(function () {
     var editandoId = null;
     var detalleId = null;
     var opciones = null;       // { proveedores, vps, clientes, usuarios }
-    var dropFechas = null;
     var cbCuenta = null;       // combobox de cuenta (general.js)
     var VPS_EXTERNO = "__externo__";   // valor centinela de la opcion "Servidor externo"
     var socketActivo = false;   // true cuando el socket de tiempo real esta conectado
@@ -198,7 +197,6 @@ $(function () {
             case "TXT":   insertarDns($("#detDnsTxt"), payload, filaDnsTxt); break;
             case "CNAME": insertarDns($("#detDnsCname"), payload, filaDnsCname); break;
         }
-        aplicarFiltrosDetalle(); // respeta el filtro/busqueda vigente en la pestaña activa
     }
 
     // Alta de nota en vivo (detalle). El evento llega a toda la sala; solo aplica
@@ -211,7 +209,6 @@ $(function () {
         if ($cuerpo.find('tr[data-id="' + payload.id + '"]').length) { return; } // evita duplicar
         $cuerpo.find(".tabla-vacia").closest("tr").remove();                     // quita placeholder
         $cuerpo.prepend(filaNota(payload));
-        aplicarFiltrosDetalle(); // respeta el filtro/busqueda vigente en la pestaña
     }
 
     function conectarSocketDominios() {
@@ -579,31 +576,16 @@ $(function () {
     // ===============================================================
     //  Detalle (viewProducto)
     // ===============================================================
-    function tbodyActivo() { return $("#detTabsContent .tab-pane.active tbody"); }
-
-    function aplicarFiltrosDetalle() {
-        var f = dropFechas ? dropFechas.valores() : { desde: "", hasta: "" };
-        AX.filtrarTabla(tbodyActivo(), { texto: $("#detBuscar").val(), desde: f.desde, hasta: f.hasta });
-    }
-
-    function reiniciarFiltrosDetalle() {
-        $("#detBuscar").val("");
-        if (dropFechas) { dropFechas.limpiar(); }
+    // Al abrir un detalle, vuelve siempre a la primera pestaña.
+    function reiniciarPestanaDetalle() {
         var primera = document.querySelector('#detTabs [data-bs-toggle="tab"]');
         if (primera && window.bootstrap && bootstrap.Tab) { bootstrap.Tab.getOrCreateInstance(primera).show(); }
-    }
-
-    function inicializarFiltrosDetalle() {
-        var t;
-        $("#detBuscar").on("input", function () { clearTimeout(t); t = setTimeout(aplicarFiltrosDetalle, 200); });
-        dropFechas = AX.dropdownFechas("#detFechas", { onAplicar: aplicarFiltrosDetalle, onLimpiar: aplicarFiltrosDetalle });
-        $('#detTabs [data-bs-toggle="tab"]').on("shown.bs.tab", aplicarFiltrosDetalle);
     }
 
     function abrirDetalle(id) {
         detalleId = id;
         mostrar($vistaDetalle);
-        reiniciarFiltrosDetalle();
+        reiniciarPestanaDetalle();
         // Sin footer en el detalle: la flecha "Volver" (junto al titulo) es la
         // unica accion de retorno.
         AX.limpiarFooter();
@@ -713,8 +695,6 @@ $(function () {
 
         // Notas (con criticidad visual): la fila se tinta segun la prioridad.
         pintarSeccion($("#detNotas"), d.notas, 4, filaNota);
-
-        aplicarFiltrosDetalle();
     }
 
     // ===============================================================
@@ -923,7 +903,6 @@ $(function () {
     });
 
     cbCuenta = AX.combobox("#cbCuentaDominio");
-    inicializarFiltrosDetalle();
     cargar();
     conectarSocketDominios(); // tiempo real: escucha altas
 

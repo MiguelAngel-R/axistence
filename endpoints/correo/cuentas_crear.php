@@ -86,6 +86,20 @@ try {
         json_error('La licencia ya alcanzo su limite de ' . (int)$lic['cantidad_cuentas'] . ' cuenta(s)', 409);
     }
 
+    // Solo una cuenta administradora por licencia: si se pide crear otra admin y
+    // ya existe una, se rechaza (recuento dentro de la tx para evitar carreras).
+    if ($tipoCuenta === 'Administrador') {
+        $stmt = $pdo->prepare(
+            "SELECT 1 FROM public.correo_licencia_cuentas
+              WHERE licencia_id = :id AND tipo_cuenta = 'Administrador'"
+        );
+        $stmt->execute([':id' => $licenciaId]);
+        if ($stmt->fetchColumn()) {
+            $pdo->rollBack();
+            json_error('La licencia ya tiene una cuenta administradora', 409);
+        }
+    }
+
     // Correo unico (case-insensitive).
     $stmt = $pdo->prepare('SELECT 1 FROM public.correo_licencia_cuentas WHERE lower(correo) = :c');
     $stmt->execute([':c' => $correo]);

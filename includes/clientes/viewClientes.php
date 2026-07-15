@@ -60,30 +60,6 @@ $tabs = [
             </div>
         </section>
 
-        <!-- Barra de filtros (reutilizable): buscador dinamico + rango de fechas -->
-        <div class="detalle-filtros">
-            <div class="toolbar__search">
-                <i class="bi bi-search" aria-hidden="true"></i>
-                <input type="search" id="detBuscar" class="form-control"
-                       placeholder="Buscar en la tabla…" autocomplete="off">
-            </div>
-            <div class="ax-dropfecha" id="detFechas">
-                <button type="button" class="btn btn-outline-secondary btn-sm ax-dropfecha__toggle" data-rol="toggle">
-                    <i class="bi bi-calendar-range" aria-hidden="true"></i> Filtros
-                </button>
-                <div class="ax-dropfecha__panel d-none" data-rol="panel">
-                    <label class="ax-dropfecha__label" for="detFechaDesde">Fecha inicio</label>
-                    <input type="date" class="form-control form-control-sm" id="detFechaDesde" data-rol="desde">
-                    <label class="ax-dropfecha__label" for="detFechaHasta">Fecha final</label>
-                    <input type="date" class="form-control form-control-sm" id="detFechaHasta" data-rol="hasta">
-                    <div class="ax-dropfecha__acciones">
-                        <button type="button" class="btn btn-outline-secondary btn-sm" data-rol="limpiar">Limpiar</button>
-                        <button type="button" class="btn btn-primary btn-sm" data-rol="aplicar">Aplicar</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
         <!-- Pestañas (orden estricto) -->
         <ul class="nav nav-tabs detalle-tabs" id="detTabs" role="tablist">
             <?php foreach ($tabs as $i => $t): ?>

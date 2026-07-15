@@ -11,12 +11,17 @@ declare(strict_types=1);
 //                             el secreto.
 //
 //  Campos POST: id? (para editar), vps_id, etiqueta?, host, puerto?, usuario,
-//               tipo_auth ('password'|'clave_privada'), secreto, passphrase?
+//               tipo_auth ('password'|'clave_privada'), secreto, passphrase?,
+//               clave_maestra (palabra maestra para cifrar; no se persiste)
 //  En edicion, si `secreto` viene vacio se conserva el guardado.
+//
+//  El secreto/passphrase se cifran con la DEK que abre la clave_maestra
+//  (esquema g2). La palabra maestra nunca se guarda.
 // =====================================================================
 
 require_once __DIR__ . '/../config/bootstrap.php';
 require_once __DIR__ . '/../helpers/consola_cifrado.php';
+require_once __DIR__ . '/../helpers/consola_llave_maestra.php';
 
 const UUID_RE = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i';
 
@@ -61,6 +66,7 @@ $usuario    = trim((string)($in['usuario'] ?? ''));
 $tipoAuth   = trim((string)($in['tipo_auth'] ?? ''));
 $secreto    = (string)($in['secreto'] ?? '');
 $passphrase = (string)($in['passphrase'] ?? '');
+$claveMaestra = (string)($in['clave_maestra'] ?? '');
 
 if ($esEdicion && !preg_match(UUID_RE, $id)) {
     json_error('id no valido', 422);
@@ -93,8 +99,26 @@ if (!$chk->fetchColumn()) {
     json_error('VPS no encontrado', 404);
 }
 
-$secretoCifrado    = $secreto !== '' ? consola_cifrar($secreto) : null;
-$passphraseCifrada = $passphrase !== '' ? consola_cifrar($passphrase) : null;
+// Abrir la DEK con la palabra maestra. Solo se necesita si hay algo que cifrar.
+$hayQueCifrar = $secreto !== '' || $passphrase !== '';
+$secretoCifrado    = null;
+$passphraseCifrada = null;
+if ($hayQueCifrar) {
+    if ($claveMaestra === '') {
+        json_error('Falta la palabra maestra para cifrar la credencial', 422);
+    }
+    $km = consola_km_abrir($pdo, $claveMaestra);
+    if ($km['estado'] === 'sin_configurar') {
+        json_error('Configura la llave maestra antes de guardar credenciales', 409);
+    }
+    if ($km['estado'] === 'clave_incorrecta') {
+        json_error('Palabra maestra incorrecta', 401);
+    }
+    $dek = $km['dek'];
+    $secretoCifrado    = $secreto !== '' ? consola_gcm_cifrar($secreto, $dek) : null;
+    $passphraseCifrada = $passphrase !== '' ? consola_gcm_cifrar($passphrase, $dek) : null;
+    $dek = null; // se suelta la DEK en cuanto se termina de cifrar
+}
 
 try {
     if ($esEdicion) {

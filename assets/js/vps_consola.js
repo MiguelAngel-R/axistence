@@ -288,6 +288,20 @@
             errorCred("Host, usuario y " + (tipo === "clave_privada" ? "clave privada" : "contraseña") + " son obligatorios.");
             return;
         }
+        // Se pide la palabra maestra para CIFRAR la credencial. Va en el payload,
+        // se usa en el servidor y no se guarda; aqui no se retiene.
+        AX.pedirClave({
+            titulo: "Palabra maestra",
+            texto: "Necesaria para cifrar esta credencial antes de guardarla.",
+            confirmar: "Guardar"
+        }).then(function (clave) {
+            if (!clave) { return; }        // cancelado: no se guarda
+            payload.clave_maestra = clave;
+            enviarCredencial(payload);
+        });
+    }
+
+    function enviarCredencial(payload) {
         var $btn = $("#btnGuardarAddCred").prop("disabled", true);
         $.ajax({
             url: "endpoints/vps/consola_credenciales.php",
@@ -295,6 +309,7 @@
             xhrFields: { withCredentials: true },
             data: JSON.stringify(payload)
         }).done(function (res) {
+            payload.clave_maestra = null;
             if (res && res.ok) {
                 modalCred().hide();
                 if (AX && AX.toast) { AX.toast("Credencial guardada."); }
@@ -304,8 +319,86 @@
             }
             $btn.prop("disabled", false);
         }).fail(function (xhr) {
-            errorCred((xhr.responseJSON && xhr.responseJSON.mensaje) || "No se pudo guardar la credencial.");
+            payload.clave_maestra = null;
             $btn.prop("disabled", false);
+            // 409 = la llave maestra aun no esta configurada: se ofrece hacerlo.
+            if (xhr.status === 409) {
+                modalCred().hide();
+                AX.confirmar({
+                    titulo: "Falta la llave maestra",
+                    texto: "Debes configurar la palabra maestra del sistema antes de guardar credenciales. ¿Configurarla ahora?",
+                    confirmar: "Configurar"
+                }).then(function (r) { if (r.isConfirmed) { abrirModalLlave(); } });
+                return;
+            }
+            errorCred((xhr.responseJSON && xhr.responseJSON.mensaje) || "No se pudo guardar la credencial.");
+        });
+    }
+
+    // --- Llave maestra (configurar / cambiar) ------------------------
+    var llaveConfigurada = false;
+
+    function modalLlave() {
+        return bootstrap.Modal.getOrCreateInstance(document.getElementById("modalLlaveMaestra"));
+    }
+    function errorLlave(msg) {
+        $("#formLlaveError").text(msg).removeClass("d-none");
+    }
+    // Consulta el estado (configurada o no) y alterna la UI del modal.
+    function abrirModalLlave() {
+        $("#formLlave")[0].reset();
+        $("#formLlaveError").addClass("d-none").text("");
+        $.ajax({
+            url: "endpoints/vps/consola_llave.php",
+            method: "GET", dataType: "json",
+            xhrFields: { withCredentials: true }
+        }).done(function (res) {
+            llaveConfigurada = !!(res && res.ok && res.data && res.data.configurada);
+            pintarModoLlave();
+            modalLlave().show();
+        }).fail(function () {
+            llaveConfigurada = false;
+            pintarModoLlave();
+            modalLlave().show();
+        });
+    }
+    // Modo "configurar" (solo palabra nueva) vs "cambiar" (actual + nueva).
+    function pintarModoLlave() {
+        $("#llaveTitulo").text(llaveConfigurada ? "Cambiar palabra maestra" : "Configurar palabra maestra");
+        $('#modalLlaveMaestra [data-rol="campo-actual"]').toggleClass("d-none", !llaveConfigurada);
+        $("#llaveActual").prop("required", llaveConfigurada);
+        $("#llaveAviso").text(llaveConfigurada
+            ? "Cambiar la palabra no re-cifra las credenciales; solo cambia la llave que las abre."
+            : "Esta palabra cifra todas las credenciales SSH. No se guarda en ningún lado: si se olvida, no se podrán descifrar.");
+    }
+    function guardarLlave() {
+        var nueva = $("#llaveNueva").val();
+        var repetir = $("#llaveRepetir").val();
+        var actual = $("#llaveActual").val();
+        if (!nueva || nueva.length < 8) { errorLlave("La palabra maestra debe tener al menos 8 caracteres."); return; }
+        if (nueva !== repetir) { errorLlave("La palabra nueva y su repetición no coinciden."); return; }
+        if (llaveConfigurada && !actual) { errorLlave("Escribe la palabra maestra actual."); return; }
+
+        var payload = { clave_maestra_nueva: nueva };
+        if (llaveConfigurada) { payload.clave_maestra_actual = actual; }
+
+        var $btn = $("#btnGuardarLlave").prop("disabled", true);
+        $.ajax({
+            url: "endpoints/vps/consola_llave.php",
+            method: "POST", contentType: "application/json", dataType: "json",
+            xhrFields: { withCredentials: true },
+            data: JSON.stringify(payload)
+        }).done(function (res) {
+            $btn.prop("disabled", false);
+            if (res && res.ok) {
+                modalLlave().hide();
+                if (AX && AX.toast) { AX.toast(llaveConfigurada ? "Palabra maestra actualizada." : "Palabra maestra configurada."); }
+            } else {
+                errorLlave((res && res.mensaje) || "No se pudo guardar.");
+            }
+        }).fail(function (xhr) {
+            $btn.prop("disabled", false);
+            errorLlave((xhr.responseJSON && xhr.responseJSON.mensaje) || "No se pudo guardar.");
         });
     }
 
@@ -484,6 +577,19 @@
             AX.error("No se cargaron las librerias de la consola (xterm/socket.io).");
             return;
         }
+        // Se pide la palabra maestra ANTES de conectar. Se usa para descifrar
+        // la credencial y se descarta al instante; nunca se guarda en el sistema.
+        AX.pedirClave({
+            titulo: "Palabra maestra",
+            texto: "Necesaria para descifrar las credenciales SSH de este servidor.",
+            confirmar: "Conectar"
+        }).then(function (clave) {
+            if (!clave) { return; }        // cancelado: no se conecta
+            solicitarTokenYConectar(id, clave);
+        });
+    }
+
+    function solicitarTokenYConectar(id, claveMaestra) {
         setEstado("Solicitando token…", "wait");
         $btnCon.prop("disabled", true);
         $.ajax({
@@ -498,7 +604,7 @@
                 AX.error((res && res.mensaje) || "No se pudo obtener el token.");
                 return;
             }
-            abrirSocket(res.data.token);
+            abrirSocket(res.data.token, claveMaestra);
         }).fail(function (xhr) {
             setEstado("Error", "error");
             $btnCon.prop("disabled", false);
@@ -506,7 +612,7 @@
         });
     }
 
-    function abrirSocket(token) {
+    function abrirSocket(token, claveMaestra) {
         initTerminal();
         if (term) { term.reset(); }
         lineaActual = ""; enEscape = false; ocultarSug();
@@ -514,10 +620,18 @@
         setEstado("Conectando…", "wait");
 
         socket = io(wsUrl() + "/consola", {
-            auth: { token: token, cols: term ? term.cols : 80, rows: term ? term.rows : 24 },
+            // La palabra maestra viaja en el handshake; Node la usa para pedir
+            // la credencial descifrada a PHP y la descarta. No se guarda aqui.
+            auth: {
+                token: token,
+                clave_maestra: claveMaestra,
+                cols: term ? term.cols : 80,
+                rows: term ? term.rows : 24
+            },
             reconnection: false,
             transports: ["websocket", "polling"]
         });
+        claveMaestra = null; // suelta la referencia local
 
         socket.on("autorizado", function () { setEstado("Autorizado…", "wait"); });
         socket.on("no_autorizado", function (d) {
@@ -717,6 +831,11 @@
         $("#consolaAddCred").on("click", abrirModalCred);
         $("#acTipoAuth").on("change", toggleCamposCred);
         $("#btnGuardarAddCred").on("click", guardarCredencial);
+
+        // Modal "Llave maestra" (configurar / cambiar la palabra del sistema)
+        $("#consolaLlaveMaestra").on("click", abrirModalLlave);
+        $("#btnGuardarLlave").on("click", guardarLlave);
+        $("#formLlave").on("submit", function (e) { e.preventDefault(); guardarLlave(); });
         $sesiones.on("click", ".consola__sesion", function () {
             $sesiones.find(".consola__sesion").removeClass("is-active");
             $(this).addClass("is-active");

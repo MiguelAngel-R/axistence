@@ -37,10 +37,12 @@ define('CONSOLA_SECRET', getenv('AXISTENCE_CONSOLA_SECRET') ?: 'axistence-consol
 // Vigencia (segundos) del token de consola desde su emision.
 define('CONSOLA_TOKEN_TTL', (int)(getenv('AXISTENCE_CONSOLA_TOKEN_TTL') ?: 60));
 
-// Clave para CIFRAR las credenciales SSH (password/clave privada) en BD
-// (AES-256-GCM). Independiente del secreto de tokens.
-// EN PRODUCCION define AXISTENCE_CONSOLA_CRYPT_KEY con un valor aleatorio y
-// GUARDALO A BUEN RECAUDO: si se pierde, las credenciales no se pueden descifrar.
+// LEGACY (esquema g1). Antes cifraba las credenciales SSH con una clave que
+// vivia junto a los datos (aqui/env). Se reemplazo por la LLAVE MAESTRA: la
+// palabra que teclea el usuario deriva la clave (PBKDF2) y NO se persiste
+// (ver endpoints/helpers/consola_llave_maestra.php, esquema g2). Se conserva
+// SOLO para poder detectar credenciales viejas (g1:) y pedir recapturarlas;
+// se puede retirar del .env una vez recapturadas todas.
 define('CONSOLA_CRYPT_KEY', getenv('AXISTENCE_CONSOLA_CRYPT_KEY') ?: 'axistence-consola-crypt-dev-cambiar-en-produccion');
 
 // Clave compartida SOLO entre el server Node y PHP. Protege los endpoints

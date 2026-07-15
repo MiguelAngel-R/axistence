@@ -274,29 +274,55 @@ function credencialAParametros(cred) {
         if (cred.passphrase) params.passphrase = cred.passphrase;
     } else {
         params.password = cred.secreto ?? '';
+        // Muchos servidores SSH no ofrecen el metodo "password" directo sino
+        // "keyboard-interactive"; con solo password fallarian ("All configured
+        // authentication methods failed") aunque la clave sea correcta. Se
+        // habilita el modo interactivo y se responde con la misma contraseña
+        // (ver el handler 'keyboard-interactive' en abrirSesionSsh).
+        params.tryKeyboard = true;
     }
     return params;
 }
 
 /**
- * Obtiene los parametros de conexion SSH para el contexto autorizado.
+ * Pide a PHP (`consola_conexion.php`) la credencial DESCIFRADA. A diferencia
+ * de phpPost, conserva el `mensaje` de error real (p. ej. "Palabra maestra
+ * incorrecta") para poder mostrarlo al operador y que reintente.
  *
- * Fuente principal: PHP (`consola_conexion.php`), que devuelve la credencial
- * del VPS DESCIFRADA a partir del token. Como respaldo de DESARROLLO, si se
- * define AXISTENCE_SSH_DEV_HOST se usa ese objetivo (util para el mock SSH
- * cuando aun no hay credencial cargada).
- *
- * @param {object} _ctx  payload del token
- * @param {string} token token de la consola (para pedir la credencial a PHP)
- * @returns {Promise<object|null>}
+ * La palabra maestra viaja solo en esta llamada; NO se guarda ni se loguea.
+ * @param {string} token
+ * @param {string} claveMaestra
+ * @returns {Promise<{ok: boolean, data?: object, mensaje?: string}>}
  */
-async function obtenerParametrosSsh(_ctx, token) {
-    const cred = await phpPost(CONEXION_URL, { token });
-    if (cred && cred.host) {
-        return credencialAParametros(cred);
+async function pedirCredencialAPhp(token, claveMaestra) {
+    try {
+        const resp = await fetch(CONEXION_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Consola-Node-Key': NODE_KEY,
+            },
+            body: JSON.stringify({ token, clave_maestra: claveMaestra }),
+        });
+        const json = await resp.json().catch(() => null);
+        if (resp.ok && json && json.ok) {
+            return { ok: true, data: json.data ?? {} };
+        }
+        const mensaje = (json && json.mensaje) || `HTTP ${resp.status}`;
+        console.warn(`[consola] Credencial rechazada por PHP (${resp.status}): ${mensaje}`);
+        return { ok: false, mensaje };
+    } catch (err) {
+        console.error('[consola] No se pudo contactar a PHP para la credencial:', err.message);
+        return { ok: false, mensaje: 'No se pudo contactar al servidor de autorizacion (¿PHP arriba?).' };
     }
+}
 
-    // Respaldo de desarrollo (mock SSH) si no hay credencial en BD.
+/**
+ * Objetivo SSH de DESARROLLO (mock) definido por env. Se usa solo como
+ * respaldo cuando el VPS aun no tiene credencial cargada en BD.
+ * @returns {object|null}
+ */
+function objetivoSshDev() {
     const host = process.env.AXISTENCE_SSH_DEV_HOST;
     if (!host) {
         return null;
@@ -315,6 +341,40 @@ async function obtenerParametrosSsh(_ctx, token) {
         params.password = process.env.AXISTENCE_SSH_DEV_PASS || '';
     }
     return params;
+}
+
+/**
+ * Obtiene los parametros de conexion SSH para el contexto autorizado.
+ *
+ * Fuente principal: PHP (`consola_conexion.php`), que devuelve la credencial
+ * DESCIFRADA con la DEK que abre la palabra maestra. Devuelve el resultado
+ * enriquecido para poder mostrar el motivo (palabra incorrecta, etc.):
+ *   { ok: true, params }         -> listo para conectar
+ *   { ok: false, mensaje }       -> error a mostrar (no reintentar solo)
+ *
+ * Solo cuando el VPS NO tiene credencial (404) se recurre al mock de
+ * desarrollo AXISTENCE_SSH_DEV_HOST, si esta definido.
+ *
+ * @param {object} _ctx  payload del token
+ * @param {string} token token de la consola
+ * @param {string} claveMaestra  palabra maestra tecleada por el operador
+ * @returns {Promise<{ok: boolean, params?: object, mensaje?: string}>}
+ */
+async function obtenerParametrosSsh(_ctx, token, claveMaestra) {
+    const res = await pedirCredencialAPhp(token, claveMaestra);
+    if (res.ok && res.data && res.data.host) {
+        return { ok: true, params: credencialAParametros(res.data) };
+    }
+
+    // Sin credencial en BD: respaldo de desarrollo (mock SSH), si existe.
+    if (!res.ok && /no encontrada|no tiene credenciales/i.test(res.mensaje || '')) {
+        const dev = objetivoSshDev();
+        if (dev) {
+            return { ok: true, params: dev };
+        }
+    }
+
+    return { ok: false, mensaje: res.mensaje || 'No hay credenciales SSH configuradas para este VPS.' };
 }
 
 /**
@@ -396,6 +456,13 @@ function abrirSesionSsh(socket, params, token) {
         if (socket.connected) socket.disconnect(true);
     };
 
+    // Autenticacion keyboard-interactive: el servidor manda uno o varios
+    // prompts (normalmente "Password:"); se responden todos con la contraseña
+    // de la credencial. Solo aplica cuando hay password (auth por contraseña).
+    conn.on('keyboard-interactive', (_name, _instructions, _lang, prompts, finish) => {
+        finish(prompts.map(() => params.password || ''));
+    });
+
     conn.on('ready', () => {
         const cols = Number(socket.handshake.auth?.cols) || 80;
         const rows = Number(socket.handshake.auth?.rows) || 24;
@@ -430,6 +497,9 @@ function abrirSesionSsh(socket, params, token) {
     });
 
     conn.on('error', (err) => {
+        // Diagnostico: el 'level' de ssh2 distingue la causa (autenticacion,
+        // red, negociacion de algoritmos, timeout...). NO se loguea la clave.
+        console.error(`[consola] SSH error socket=${socket.id} level=${err.level || '?'} msg=${err.message}`);
         socket.emit('ssh_error', { mensaje: 'Error de conexion SSH: ' + err.message });
         cerrar('conn-error');
     });
@@ -457,11 +527,17 @@ function abrirSesionSsh(socket, params, token) {
         cerrar('socket-disconnect');
     });
 
+    // Diagnostico del intento (sin exponer la contraseña ni la clave privada).
+    const metodo = params.privateKey ? 'clave_privada' : 'password';
+    console.log(`[consola] Conectando SSH socket=${socket.id} ${params.username}@${params.host}:${params.port} metodo=${metodo} tryKeyboard=${!!params.tryKeyboard}`);
     conn.connect(params);
 }
 
 consolaNs.on('connection', async (socket) => {
     const token = socket.handshake.auth?.token || socket.handshake.query?.token;
+    // La palabra maestra viaja en el handshake; se usa y se descarta. NO se
+    // guarda en socket.data ni se loguea.
+    const claveMaestra = String(socket.handshake.auth?.clave_maestra || '');
 
     if (!token) {
         socket.emit('no_autorizado', { mensaje: 'Falta el token de acceso.' });
@@ -481,14 +557,16 @@ consolaNs.on('connection', async (socket) => {
     console.log(`[consola] Autorizado socket=${socket.id} vps=${ctx.vps_id} usuario=${ctx.usuario_id}`);
     socket.emit('autorizado', { vps_id: ctx.vps_id, usuario_id: ctx.usuario_id });
 
-    // Abrir la conexion SSH real (o simulada en pruebas).
-    const params = await obtenerParametrosSsh(ctx, String(token));
-    if (!params) {
-        socket.emit('ssh_error', { mensaje: 'No hay credenciales SSH configuradas para este VPS.' });
+    // Abrir la conexion SSH real (o simulada en pruebas). obtenerParametrosSsh
+    // descifra la credencial con la palabra maestra; si es incorrecta, el
+    // mensaje real llega aqui para que el operador reintente.
+    const res = await obtenerParametrosSsh(ctx, String(token), claveMaestra);
+    if (!res.ok) {
+        socket.emit('ssh_error', { mensaje: res.mensaje });
         socket.disconnect(true);
         return;
     }
-    abrirSesionSsh(socket, params, String(token));
+    abrirSesionSsh(socket, res.params, String(token));
 });
 
 // --- Arranque --------------------------------------------------------

@@ -26,7 +26,6 @@ $(function () {
     var editandoId = null;     // id del VPS en edicion
     var detalleId = null;      // id del VPS mostrado en el detalle
     var opciones = null;       // { proveedores } cacheadas
-    var dropFechas = null;     // controlador del dropdown de fechas (general.js)
     var cbRef = null;          // combobox de referencia (general.js)
     var refsSpec = {};         // mapa id -> specs de la referencia (para heredar/mostrar)
     var modalRef = AX.modal("#modalNuevaReferenciaVps"); // modal anidado (nueva referencia)
@@ -333,49 +332,12 @@ $(function () {
     // ===============================================================
     //  Detalle (viewProducto)
     // ===============================================================
-    // Devuelve el <tbody> de la tabla de la pestana activa del detalle. Se filtra
-    // por :visible para soportar subtabs anidados (Inventario): asi solo se toma
-    // la tabla realmente visible y no las de subpanes ocultos.
-    function tbodyActivo() {
-        return $("#detTabsContent .tab-pane.active tbody:visible");
-    }
-
-    // Aplica el buscador dinamico + rango de fechas a la tabla activa.
-    function aplicarFiltrosDetalle() {
-        var f = dropFechas ? dropFechas.valores() : { desde: "", hasta: "" };
-        AX.filtrarTabla(tbodyActivo(), {
-            texto: $("#detBuscar").val(),
-            desde: f.desde,
-            hasta: f.hasta
-        });
-    }
-
-    // Reinicia los filtros y vuelve a la primera pestana (al abrir un detalle).
-    function reiniciarFiltrosDetalle() {
-        $("#detBuscar").val("");
-        if (dropFechas) { dropFechas.limpiar(); }
+    // Al abrir un detalle, vuelve siempre a la primera pestana.
+    function reiniciarPestanaDetalle() {
         var primera = document.querySelector('#detTabs [data-bs-toggle="tab"]');
         if (primera && window.bootstrap && bootstrap.Tab) {
             bootstrap.Tab.getOrCreateInstance(primera).show();
         }
-    }
-
-    // Cablea (una sola vez) el buscador, el dropdown de fechas y el cambio
-    // de pestana. Reutiliza las utilidades de general.js.
-    function inicializarFiltrosDetalle() {
-        var t;
-        $("#detBuscar").on("input", function () {
-            clearTimeout(t);
-            t = setTimeout(aplicarFiltrosDetalle, 200);
-        });
-        dropFechas = AX.dropdownFechas("#detFechas", {
-            onAplicar: aplicarFiltrosDetalle,
-            onLimpiar: aplicarFiltrosDetalle
-        });
-        // Al cambiar de pestana (o de subtab del inventario), se re-aplican los
-        // filtros a la tabla que quede visible.
-        $('#detTabs [data-bs-toggle="tab"]').on("shown.bs.tab", aplicarFiltrosDetalle);
-        $('#invSubtabs [data-bs-toggle="tab"]').on("shown.bs.tab", aplicarFiltrosDetalle);
     }
 
     function abrirDetalle(id) {
@@ -384,7 +346,7 @@ $(function () {
         // (p. ej. vps_consola.js lee #vistaDetalle[data-vps-id]).
         $vistaDetalle.attr("data-vps-id", id);
         mostrar($vistaDetalle);
-        reiniciarFiltrosDetalle();
+        reiniciarPestanaDetalle();
         cargarDetalleOpciones(id);   // opciones para los modales "Agregar ..."
         // Sin footer en el detalle: la unica accion de retorno es la flecha
         // "Volver" junto al titulo (ver viewProducto). Se oculta el footer.
@@ -461,9 +423,6 @@ $(function () {
         // Notas (con criticidad visual): la fila completa se tinta segun la
         // prioridad (Advertencia / Importante / Crítica; Información sin tinte).
         pintarSeccion($("#detNotas"), d.notas, 4, filaNotaDetalle);
-
-        // Tras (re)pintar, se aplican los filtros vigentes a la tabla activa.
-        aplicarFiltrosDetalle();
     }
 
     // Dashboard: vencimiento, dias restantes (con alerta de color), ultima
@@ -805,9 +764,7 @@ $(function () {
         // Evita duplicar: el propio actor tambien recibe el evento (y ya refresco).
         if ($cuerpo.find('tr[data-dom-id="' + payload.id + '"]').length) { return; }
         $cuerpo.find(".tabla-vacia").closest("tr").remove(); // quita el placeholder "vacio"
-        $cuerpo.append(filaDominioDetalle(payload));
-        aplicarFiltrosDetalle(); // respeta el filtro/busqueda vigente en la pestaña
-    }
+        $cuerpo.append(filaDominioDetalle(payload));    }
 
     // Fila de la pestaña "Certificados SSL" del detalle (enlace cruzado al modulo
     // SSL). La usan pintarDetalle y la insercion en vivo por socket; data-ssl-id
@@ -833,9 +790,7 @@ $(function () {
         // Evita duplicar: el propio actor tambien recibe el evento (y ya refresco).
         if ($cuerpo.find('tr[data-ssl-id="' + payload.id + '"]').length) { return; }
         $cuerpo.find(".tabla-vacia").closest("tr").remove(); // quita el placeholder "vacio"
-        $cuerpo.append(filaCertificadoDetalle(payload));
-        aplicarFiltrosDetalle(); // respeta el filtro/busqueda vigente en la pestaña
-    }
+        $cuerpo.append(filaCertificadoDetalle(payload));    }
 
     // Fila de la pestaña "Inventario Lógico" (subtab Registros) del detalle. La
     // usan pintarDetalle y la insercion en vivo por socket; data-inv-id permite
@@ -863,9 +818,7 @@ $(function () {
         // Evita duplicar: el propio actor tambien recibe el evento (y ya refresco).
         if ($cuerpo.find('tr[data-inv-id="' + payload.id + '"]').length) { return; }
         $cuerpo.find(".tabla-vacia").closest("tr").remove(); // quita el placeholder "vacio"
-        $cuerpo.prepend(filaInventarioDetalle(payload));
-        aplicarFiltrosDetalle(); // respeta el filtro/busqueda vigente en la pestaña
-    }
+        $cuerpo.prepend(filaInventarioDetalle(payload));    }
 
     // Fila de la pestaña "Virtual Hosts" del detalle. La usan pintarDetalle y la
     // insercion en vivo por socket; data-vh-id permite localizarla para no
@@ -894,9 +847,7 @@ $(function () {
         // Evita duplicar: el propio actor tambien recibe el evento (y ya refresco).
         if ($cuerpo.find('tr[data-vh-id="' + payload.id + '"]').length) { return; }
         $cuerpo.find(".tabla-vacia").closest("tr").remove(); // quita el placeholder "vacio"
-        $cuerpo.append(filaVirtualHostDetalle(payload));
-        aplicarFiltrosDetalle(); // respeta el filtro/busqueda vigente en la pestaña
-    }
+        $cuerpo.append(filaVirtualHostDetalle(payload));    }
 
     // Fila de la pestaña "Historial" del detalle (log de auditoria del VPS). La
     // usan pintarDetalle y la insercion en vivo por socket; data-log-id permite
@@ -923,9 +874,7 @@ $(function () {
         // Evita duplicar: el propio actor tambien recibe el evento (y ya refresco).
         if ($cuerpo.find('tr[data-log-id="' + payload.id + '"]').length) { return; }
         $cuerpo.find(".tabla-vacia").closest("tr").remove(); // quita el placeholder "vacio"
-        $cuerpo.prepend(filaHistorialDetalle(payload));
-        aplicarFiltrosDetalle(); // respeta el filtro/busqueda vigente en la pestaña
-    }
+        $cuerpo.prepend(filaHistorialDetalle(payload));    }
 
     // Fila de la pestaña "Notas" del detalle. La usan pintarDetalle y la insercion
     // en vivo por socket; data-nota-id permite localizarla para no duplicar. La
@@ -951,9 +900,7 @@ $(function () {
         // Evita duplicar: el propio actor tambien recibe el evento (y ya refresco).
         if ($cuerpo.find('tr[data-nota-id="' + payload.id + '"]').length) { return; }
         $cuerpo.find(".tabla-vacia").closest("tr").remove(); // quita el placeholder "vacio"
-        $cuerpo.prepend(filaNotaDetalle(payload));
-        aplicarFiltrosDetalle(); // respeta el filtro/busqueda vigente en la pestaña
-    }
+        $cuerpo.prepend(filaNotaDetalle(payload));    }
 
     function conectarSocketVps() {
         var url = $vistaListado.data("ws");
@@ -1152,7 +1099,6 @@ $(function () {
     // calcula sola (registro + 1 año - 1 dia) y se previsualiza de solo lectura.
     var vigAddDominio = AX.vincularVigencia("#adFechaReg", "#adFechaVen");
     var vigAddSsl     = AX.vincularVigencia("#asFechaReg", "#asFechaVen");
-    inicializarFiltrosDetalle();
     cargar();
     conectarSocketVps(); // tiempo real: escucha altas/ediciones/borrados del listado
 
