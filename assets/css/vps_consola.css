@@ -317,6 +317,174 @@
     font-size: .8rem;
 }
 
+/* Grupo de botones de la barra superior (Generar bloque / Nueva). */
+.consola__instr-top-btns {
+    display: flex;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+}
+
+/* --- Generador de bloques: panel pegado a la derecha del modal ------- */
+/* Por defecto el dialogo es modal-lg (un solo recuadro). Al activar el
+   generador (clase is-bloques) se ensancha y muestra los dos recuadros
+   —catalogo y generador— del mismo tamaño, uno junto al otro. */
+.consola__instr-dialog.is-bloques {
+    width: min(96vw, 1640px);
+    max-width: min(96vw, 1640px);
+    gap: var(--space-3);
+    align-items: stretch;   /* ambos recuadros con la misma altura */
+}
+.consola__instr-dialog.is-bloques .modal-content {
+    flex: 1 1 0;
+    min-width: 0;
+    height: 100%;
+}
+
+/* Zona donde se sueltan los comandos arrastrados desde el catalogo. */
+.consola__bloques-zona {
+    min-height: 220px;
+    border: 1px dashed var(--c-line);
+    padding: var(--space-3);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+/* En el catalogo (origen del arrastre) los comandos se ven "agarrables". */
+.consola__instr-dialog.is-bloques .consola__instr-item { cursor: grab; }
+.consola__instr-item--arrastrando { cursor: grabbing; }
+.consola__instr-item--fantasma { opacity: .4; }
+
+/* Chip de un comando dentro del bloque (nodo propio, sin las acciones del
+   catalogo): asa para reordenar + info (titulo/comando) + quitar. */
+.consola__bloque-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    background: var(--c-surface);
+    border: 1px solid var(--c-line);
+    padding: var(--space-2) var(--space-3);
+}
+.consola__bloque-item--fantasma { opacity: .4; }
+
+.consola__bloque-asa {
+    flex: 0 0 auto;
+    color: var(--c-text-muted);
+    cursor: grab;
+    line-height: 1;
+}
+.consola__bloque-item--fantasma .consola__bloque-asa,
+.consola__bloque-asa:active { cursor: grabbing; }
+
+.consola__bloque-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+}
+.consola__bloque-info b { font-size: .82rem; color: var(--c-text); }
+.consola__bloque-info code {
+    font-family: "Cascadia Code", "Consolas", "Courier New", monospace;
+    font-size: .72rem;
+    color: var(--c-text);
+    background: var(--c-surface-alt);
+    border: 1px solid var(--c-line);
+    padding: 1px 6px;
+    align-self: flex-start;
+    max-width: 100%;
+    word-break: break-all;
+}
+
+.consola__bloque-quitar { flex: 0 0 auto; }
+.consola__bloque-quitar:hover { color: var(--c-danger, #dc2626); }
+
+/* --- Pestañas del modal (Comandos / Bloques de comando) ------------- */
+.consola__instr-tabs { margin-bottom: 0; }
+.consola__instr-tabs-cont { padding-top: var(--space-3); }
+
+/* --- Pestaña "Bloques": tarjeta de un bloque guardado (solo lectura) - */
+.consola__bloque-card {
+    border: 1px solid var(--c-line);
+    background: var(--c-surface);
+    padding: var(--space-2) var(--space-3);
+    margin-bottom: var(--space-2);
+}
+.consola__bloque-card-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-2);
+}
+.consola__bloque-card-head b { font-size: .85rem; color: var(--c-text); min-width: 0; }
+.consola__bloque-card-right {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+.consola__bloque-card [data-accion="ejecutar-bloque"] { color: var(--c-ok, #16a34a); }
+.consola__bloque-card [data-accion="eliminar-bloque"]:hover { color: var(--c-danger, #dc2626); }
+.consola__bloque-card-count {
+    font-size: .72rem;
+    color: var(--c-text-muted);
+    white-space: nowrap;
+}
+.consola__bloque-card-desc {
+    display: block;
+    font-size: .75rem;
+    color: var(--c-text-muted);
+    margin-top: 2px;
+}
+
+/* Lista de comandos dentro de la tarjeta del bloque. */
+.consola__bloque-cmds {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: var(--space-2);
+}
+.consola__bloque-cmd {
+    display: flex;
+    gap: var(--space-2);
+    align-items: flex-start;
+}
+.consola__bloque-num {
+    flex: 0 0 auto;
+    font-size: .72rem;
+    color: var(--c-text-muted);
+    min-width: 1.4em;
+    text-align: right;
+}
+.consola__bloque-cmd-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+}
+.consola__bloque-cmd-info small { font-size: .72rem; color: var(--c-text-muted); }
+.consola__bloque-cmd-info code {
+    font-family: "Cascadia Code", "Consolas", "Courier New", monospace;
+    font-size: .72rem;
+    color: var(--c-text);
+    background: var(--c-surface-alt);
+    border: 1px solid var(--c-line);
+    padding: 1px 6px;
+    align-self: flex-start;
+    max-width: 100%;
+    word-break: break-all;
+}
+
+/* En pantallas estrechas los dos recuadros se apilan en vertical. */
+@media (max-width: 991.98px) {
+    .consola__instr-dialog.is-bloques {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .consola__instr-dialog.is-bloques .modal-content { height: auto; }
+}
+
 /* --- Modal "Agregar credencial": clave privada monoespaciada -------- */
 .consola__clave {
     font-family: "Cascadia Code", "Consolas", "Courier New", monospace;

@@ -72,6 +72,9 @@ if ($vista === 'vps') {
     $libsJs[]  = 'https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js';
     $libsJs[]  = 'https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js';
     $libsJs[]  = 'https://cdn.jsdelivr.net/npm/socket.io-client@4.8.1/dist/socket.io.min.js';
+    // Generador de bloques del modal de instrucciones: arrastrar comandos del
+    // catalogo a la zona del bloque (mismo Sortable.js que usa el Kanban).
+    $libsJs[]  = 'https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.2/Sortable.min.js';
 }
 
 // Los listados con tiempo real usan Socket.IO (la tabla se actualiza sin

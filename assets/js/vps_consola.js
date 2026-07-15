@@ -133,7 +133,11 @@
                 enEscape = true;
                 lineaActual = "";
             } else if (ch === "\r" || ch === "\n") {   // Enter: se envio el comando
-                recordarComando(lineaActual);
+                // Si el bloque esperaba una contraseña, este Enter la confirma:
+                // no se registra (es secreto) y se pasa a "verificando".
+                if (!bloqueEnterClave()) {
+                    recordarComando(lineaActual);
+                }
                 lineaActual = "";
             } else if (ch === "\x7f" || ch === "\b") { // backspace
                 lineaActual = lineaActual.slice(0, -1);
@@ -415,6 +419,274 @@
         $("#instrForm").prop("hidden", !esForm);
         $('#modalInstrucciones [data-rol="pie-lista"]').prop("hidden", esForm);
         $('#modalInstrucciones [data-rol="pie-form"]').prop("hidden", !esForm);
+        // El generador de bloques toma los comandos de la LISTA; en el
+        // formulario esa lista no esta visible, asi que se cierra el panel.
+        if (esForm) { toggleBloques(false); }
+    }
+
+    // Abre/cierra el panel "Generar bloque de codigo", que aparece pegado a
+    // la derecha del modal (mismo tamaño). Ensancha el dialogo para que quepan
+    // los dos recuadros. Al abrir por primera vez engancha el arrastre.
+    function toggleBloques(abrir) {
+        abrir = !!abrir;
+        $("#bloquesPanel").prop("hidden", !abrir);
+        $("#modalInstrucciones").find(".consola__instr-dialog").toggleClass("is-bloques", abrir);
+        if (abrir) { iniciarBloquesDnd(); }
+    }
+
+    // --- Arrastre de comandos hacia el bloque (Sortable.js) -----------
+    var bloquesDndListo = false;         // el DnD se engancha una sola vez
+    var bloquesGuardadosCargados = false; // cache de la pestaña "Bloques"
+    var bloquesPorId = {};               // id -> bloque (para editar)
+    var bloqueEditId = "";               // id del bloque en edicion ("" = alta)
+
+    // --- Ejecucion por pasos de un bloque (para no romper el flujo cuando un
+    //     comando pide contraseña) ------------------------------------------
+    var bloqueCola = [];                 // comandos pendientes del bloque en curso
+    var bloqueActivo = false;            // hay un bloque ejecutandose paso a paso
+    // Interaccion de contraseña (dos fases; la contraseña se "confirma" con Enter):
+    var bloqueEsperaClave = false;       // hay un prompt de clave y el usuario NO ha dado Enter
+    var bloqueVerificaClave = false;     // el usuario dio Enter; se espera el veredicto del shell
+    var bloqueQuietTimer = null;         // temporizador de "silencio" del shell
+    var BLOQUE_QUIET_MS = 800;           // ms sin salida para dar por listo el comando
+    // Mismos patrones que usa el server (index.js) para detectar el prompt de
+    // clave en la salida: se limpian los codigos ANSI y se busca una linea que
+    // contenga password/passphrase/contraseña y TERMINE en ":".
+    var RE_ANSI_CLI = /\x1b\[[0-9;?]*[a-zA-Z]|\x1b[()][A-Za-z0-9]|\x1b[=>]/g;
+    var RE_PROMPT_CLAVE_CLI = /(?:password|passphrase|contraseña|verification code)\b[^\r\n]*:[ \t]*$/i;
+
+    // Muestra/oculta el placeholder de la zona segun tenga o no comandos.
+    function actualizarVacioBloques() {
+        var hay = $("#bloquesZona .consola__bloque-item").length > 0;
+        $("#bloquesZona .consola__vacio").toggleClass("d-none", hay);
+    }
+
+    // Construye el "chip" que representa un comando dentro del bloque. Es un
+    // nodo distinto al del catalogo (sin las acciones ejecutar/editar/eliminar):
+    // solo el titulo, el comando y un boton para quitarlo del bloque.
+    function construirBloqueItem(titulo, cmd) {
+        return $('<div class="consola__bloque-item">')
+            .attr("data-cmd", cmd)
+            .attr("data-titulo", titulo || "")
+            .append(
+                $('<span class="consola__bloque-asa" title="Arrastrar para reordenar"><i class="bi bi-grip-vertical" aria-hidden="true"></i></span>'),
+                $('<span class="consola__bloque-info">').append(
+                    titulo ? $("<b>").text(titulo) : null,
+                    $("<code>").text(cmd)
+                ),
+                $('<button type="button" class="btn btn-icon btn-sm consola__bloque-quitar" title="Quitar del bloque"><i class="bi bi-x-lg" aria-hidden="true"></i></button>')
+            );
+    }
+
+    // Engancha el arrastre (una sola vez): la lista del catalogo es el ORIGEN
+    // (se clona: los comandos siguen existiendo alli) y la zona del bloque es
+    // el DESTINO (acepta soltar y permite reordenar lo ya soltado).
+    function iniciarBloquesDnd() {
+        if (bloquesDndListo) { return; }
+        if (typeof Sortable === "undefined") { return; }
+        var listaEl = document.getElementById("instrLista");
+        var zonaEl = document.getElementById("bloquesZona");
+        if (!listaEl || !zonaEl) { return; }
+
+        // ORIGEN: catalogo. pull:"clone" + put:false => los comandos no se
+        // mueven ni se reordenan; se copia una instancia hacia el bloque.
+        new Sortable(listaEl, {
+            group: { name: "bloques", pull: "clone", put: false },
+            sort: false,
+            draggable: ".consola__instr-item",
+            filter: ".consola__instr-acc, .consola__instr-acc *",  // no iniciar arrastre desde los botones
+            preventOnFilter: false,                                // ...para que sus clics sigan funcionando
+            ghostClass: "consola__instr-item--fantasma",
+            dragClass: "consola__instr-item--arrastrando"
+        });
+
+        // DESTINO: zona del bloque. Acepta lo que llega del catalogo y permite
+        // reordenar los chips ya soltados (pero no arrastrarlos de vuelta).
+        new Sortable(zonaEl, {
+            group: { name: "bloques", pull: false, put: true },
+            animation: 150,
+            draggable: ".consola__bloque-item",
+            handle: ".consola__bloque-asa",
+            ghostClass: "consola__bloque-item--fantasma",
+            // Al soltar un comando del catalogo llega su CLON (un .consola__instr-item);
+            // lo reemplazamos por un chip de bloque limpio con el comando.
+            onAdd: function (evt) {
+                var cmd = evt.item.getAttribute("data-cmd") || "";
+                var titulo = evt.item.getAttribute("data-titulo") || "";
+                evt.item.replaceWith(construirBloqueItem(titulo, cmd)[0]);
+                actualizarVacioBloques();
+            }
+        });
+
+        bloquesDndListo = true;
+    }
+
+    // Vacia el generador y lo deja en modo ALTA: nombre + comandos + textos de
+    // titulo/boton (tras guardar, al cerrar el panel o al abrir el modal).
+    function limpiarBloque() {
+        bloqueEditId = "";
+        $("#bloqueNombre").val("");
+        $("#bloquesError").addClass("d-none").text("");
+        $("#bloquesZona .consola__bloque-item").remove();
+        actualizarVacioBloques();
+        $("#bloquesTitulo").text("Generar bloque de código");
+        $("#bloquesGuardarTexto").text("Guardar bloque");
+    }
+
+    // Guarda el bloque: nombre + los comandos soltados, en el orden actual.
+    function guardarBloque() {
+        var $err = $("#bloquesError").addClass("d-none").text("");
+        var nombre = ($("#bloqueNombre").val() || "").trim();
+        var comandos = [];
+        $("#bloquesZona .consola__bloque-item").each(function () {
+            comandos.push({
+                titulo: $(this).attr("data-titulo") || "",
+                comando: $(this).attr("data-cmd") || ""
+            });
+        });
+        if (!nombre) { $err.text("Ponle un nombre al bloque.").removeClass("d-none"); return; }
+        if (!comandos.length) { $err.text("Arrastra al menos un comando al bloque.").removeClass("d-none"); return; }
+
+        var editando = !!bloqueEditId;
+        var payload = { nombre: nombre, comandos: comandos };
+        if (editando) { payload.id = bloqueEditId; }
+
+        var $btn = $("#bloquesGuardar").prop("disabled", true);
+        $.ajax({
+            url: "endpoints/vps/consola_bloques.php",
+            method: "POST", contentType: "application/json", dataType: "json",
+            xhrFields: { withCredentials: true },
+            data: JSON.stringify(payload)
+        }).done(function (res) {
+            if (res && res.ok) {
+                if (AX && AX.toast) { AX.toast(editando ? "Bloque actualizado." : "Bloque guardado."); }
+                limpiarBloque();
+                toggleBloques(false);
+                bloquesGuardadosCargados = false;   // que la pestaña "Bloques" lo muestre al abrirla
+            } else {
+                $err.text((res && res.mensaje) || "No se pudo guardar el bloque.").removeClass("d-none");
+            }
+            $btn.prop("disabled", false);
+        }).fail(function (xhr) {
+            $err.text((xhr.responseJSON && xhr.responseJSON.mensaje) || "No se pudo guardar el bloque.").removeClass("d-none");
+            $btn.prop("disabled", false);
+        });
+    }
+
+    // --- Bloques guardados (pestaña "Bloques de comando", solo lectura) ---
+    // Carga los bloques desde el backend (perezoso: solo la primera vez o si
+    // se fuerza tras guardar/crear uno nuevo).
+    function cargarBloquesGuardados(forzar) {
+        if (bloquesGuardadosCargados && !forzar) { return; }
+        var $cont = $("#bloquesGuardados").html('<div class="consola__cargando">Cargando…</div>');
+        $.ajax({
+            url: "endpoints/vps/consola_bloques.php",
+            method: "GET", dataType: "json",
+            xhrFields: { withCredentials: true }
+        }).done(function (res) {
+            renderBloquesGuardados((res && res.ok && res.data && res.data.bloques) || []);
+            bloquesGuardadosCargados = true;
+        }).fail(function () {
+            $cont.html('<div class="consola__vacio">No se pudieron cargar los bloques.</div>');
+        });
+    }
+
+    // Pinta los bloques: por cada uno, su nombre + acciones + los comandos que
+    // contiene. Cachea cada bloque en bloquesPorId para poder editarlo.
+    function renderBloquesGuardados(bloques) {
+        var $cont = $("#bloquesGuardados").empty();
+        bloquesPorId = {};
+        if (!bloques.length) {
+            $cont.html('<div class="consola__vacio">Aún no hay bloques guardados. Crea uno con «Generar bloque de código».</div>');
+            return;
+        }
+        bloques.forEach(function (b) {
+            bloquesPorId[b.id] = b;
+            var comandos = b.comandos || [];
+            var $cmds = $('<div class="consola__bloque-cmds">');
+            comandos.forEach(function (c, i) {
+                $cmds.append(
+                    $('<div class="consola__bloque-cmd">').append(
+                        $('<span class="consola__bloque-num">').text((i + 1) + "."),
+                        $('<span class="consola__bloque-cmd-info">').append(
+                            c.titulo ? $("<small>").text(c.titulo) : null,
+                            $("<code>").text(c.comando)
+                        )
+                    )
+                );
+            });
+            var $acc = $('<span class="consola__instr-acc">').append(
+                $('<button type="button" class="btn btn-icon btn-sm" data-accion="ejecutar-bloque" title="Ejecutar el bloque en la terminal"><i class="bi bi-play-fill" aria-hidden="true"></i></button>').attr("data-id", b.id),
+                $('<button type="button" class="btn btn-icon btn-sm" data-accion="editar-bloque" title="Editar bloque"><i class="bi bi-pencil" aria-hidden="true"></i></button>').attr("data-id", b.id),
+                $('<button type="button" class="btn btn-icon btn-sm" data-accion="eliminar-bloque" title="Eliminar bloque"><i class="bi bi-trash" aria-hidden="true"></i></button>').attr("data-id", b.id)
+            );
+            $cont.append(
+                $('<div class="consola__bloque-card">').append(
+                    $('<div class="consola__bloque-card-head">').append(
+                        $("<b>").text(b.nombre),
+                        $('<span class="consola__bloque-card-right">').append(
+                            $('<span class="consola__bloque-card-count">').text(comandos.length + " comando(s)"),
+                            $acc
+                        )
+                    ),
+                    b.descripcion ? $('<small class="consola__bloque-card-desc">').text(b.descripcion) : null,
+                    $cmds
+                )
+            );
+        });
+    }
+
+    // Abre el generador precargado con el bloque para editarlo: nombre + sus
+    // comandos como chips. Desde ahi se pueden quitar comandos y arrastrar mas.
+    function editarBloque(id) {
+        var b = bloquesPorId[id];
+        if (!b) { return; }
+        bloqueEditId = id;
+        // El origen del arrastre (catalogo) vive en la pestaña "Comandos": la activamos.
+        if (typeof bootstrap !== "undefined" && bootstrap.Tab) {
+            bootstrap.Tab.getOrCreateInstance(document.getElementById("instrtab-comandos")).show();
+        }
+        $("#bloquesError").addClass("d-none").text("");
+        $("#bloqueNombre").val(b.nombre || "");
+        // Reemplaza los chips por los comandos del bloque, en orden.
+        $("#bloquesZona .consola__bloque-item").remove();
+        (b.comandos || []).forEach(function (c) {
+            $("#bloquesZona").append(construirBloqueItem(c.titulo || "", c.comando || ""));
+        });
+        actualizarVacioBloques();
+        // UI en modo edicion (titulo + boton).
+        $("#bloquesTitulo").text("Editar bloque");
+        $("#bloquesGuardarTexto").text("Guardar cambios");
+        toggleBloques(true);
+    }
+
+    // Elimina un bloque (con confirmacion) y refresca la pestaña.
+    function eliminarBloque(id) {
+        var b = bloquesPorId[id];
+        AX.confirmar({
+            titulo: "Eliminar bloque",
+            texto: "¿Eliminar «" + ((b && b.nombre) || "este bloque") + "»? Se borrarán también sus comandos.",
+            confirmar: "Eliminar", peligro: true
+        }).then(function (r) {
+            if (!r.isConfirmed) { return; }
+            $.ajax({
+                url: "endpoints/vps/consola_bloques.php",
+                method: "DELETE", contentType: "application/json", dataType: "json",
+                xhrFields: { withCredentials: true },
+                data: JSON.stringify({ id: id })
+            }).done(function (res) {
+                if (res && res.ok) {
+                    if (AX && AX.toast) { AX.toast("Bloque eliminado."); }
+                    // Si se estaba editando justo ese bloque, descarta el generador.
+                    if (bloqueEditId === id) { toggleBloques(false); limpiarBloque(); }
+                    cargarBloquesGuardados(true);
+                } else {
+                    AX.error((res && res.mensaje) || "No se pudo eliminar.");
+                }
+            }).fail(function (xhr) {
+                AX.error((xhr.responseJSON && xhr.responseJSON.mensaje) || "No se pudo eliminar.");
+            });
+        });
     }
 
     // Pide el catalogo al backend, lo cachea y ejecuta cb() al terminar.
@@ -456,7 +728,10 @@
                     $('<button type="button" class="btn btn-icon btn-sm" data-accion="editar" title="Editar"><i class="bi bi-pencil" aria-hidden="true"></i></button>').attr("data-id", it.id),
                     $('<button type="button" class="btn btn-icon btn-sm" data-accion="eliminar" title="Eliminar"><i class="bi bi-trash" aria-hidden="true"></i></button>').attr("data-id", it.id)
                 );
-                var $li = $('<div class="consola__instr-item">').append(
+                var $li = $('<div class="consola__instr-item">')
+                    .attr("data-cmd", it.comando)
+                    .attr("data-titulo", it.titulo)
+                    .append(
                     $('<span class="consola__instr-info">').append(
                         $('<b>').text(it.titulo),
                         it.descripcion ? $('<small>').text(it.descripcion) : null,
@@ -472,6 +747,13 @@
     // Abre el modal en modo LISTA y (re)carga el catalogo.
     function abrirModalInstr() {
         modoFormInstr(false);
+        limpiarBloque();        // el generador arranca vacio en cada apertura del modal
+        toggleBloques(false);   // ...y cerrado
+        // Arranca siempre en la pestaña "Comandos".
+        if (typeof bootstrap !== "undefined" && bootstrap.Tab) {
+            bootstrap.Tab.getOrCreateInstance(document.getElementById("instrtab-comandos")).show();
+        }
+        bloquesGuardadosCargados = false;   // recargar bloques la proxima vez que se abra su pestaña
         modalInstr().show();
         $instrLista.html('<div class="consola__cargando">Cargando…</div>');
         cargarInstr(function (ok) {
@@ -491,6 +773,101 @@
         modalInstr().hide();
         if (term) { term.focus(); }
         if (AX && AX.toast) { AX.toast("Ejecutando: " + cmd); }
+    }
+
+    // Ejecuta un bloque completo enviando sus comandos EN SECUENCIA, pero uno a
+    // uno: no manda el siguiente hasta que el shell queda en silencio. Si algun
+    // comando pide contraseña (prompt detectado en la salida), PAUSA hasta que
+    // el operador la teclee (al continuar el shell produce salida y se reanuda),
+    // asi la contraseña no se "come" el siguiente comando del bloque.
+    function ejecutarBloque(id) {
+        var b = bloquesPorId[id];
+        if (!b) { return; }
+        var comandos = (b.comandos || [])
+            .map(function (c) { return ((c && c.comando) || "").trim(); })
+            .filter(function (c) { return c !== ""; });
+        if (!comandos.length) { AX.toast && AX.toast("El bloque no tiene comandos."); return; }
+        if (!socket || !conectado) { AX.toast && AX.toast("Conéctate a la consola para ejecutar."); return; }
+        bloqueCola = comandos.slice();
+        bloqueActivo = true;
+        bloqueEsperaClave = false;
+        bloqueVerificaClave = false;
+        modalInstr().hide();
+        if (term) { term.focus(); }
+        if (AX && AX.toast) { AX.toast("Ejecutando bloque «" + (b.nombre || "") + "» (" + comandos.length + " comando(s))"); }
+        enviarSiguienteComandoBloque();
+    }
+
+    // Envia el proximo comando del bloque y arma el temporizador de silencio.
+    function enviarSiguienteComandoBloque() {
+        clearTimeout(bloqueQuietTimer);
+        if (!bloqueActivo) { return; }
+        if (!bloqueCola.length) { bloqueActivo = false; return; }   // bloque terminado
+        if (!socket || !conectado) { cancelarBloque(); return; }    // se cayo la consola
+        var cmd = bloqueCola.shift();
+        socket.emit("input", cmd + "\r");
+        recordarComando(cmd);
+        armarSilencioBloque();
+    }
+
+    // (Re)arma el temporizador: cuando el shell lleva BLOQUE_QUIET_MS sin emitir
+    // salida y NO hay una interaccion de contraseña en curso, envia el siguiente.
+    function armarSilencioBloque() {
+        clearTimeout(bloqueQuietTimer);
+        bloqueQuietTimer = setTimeout(function () {
+            if (!bloqueActivo) { return; }
+            if (bloqueEsperaClave || bloqueVerificaClave) { return; } // en plena clave: esperar
+            enviarSiguienteComandoBloque();
+        }, BLOQUE_QUIET_MS);
+    }
+
+    // Se llama con cada trozo de salida del shell mientras corre un bloque.
+    // Maneja la interaccion de contraseña SIN depender del silencio (la clave se
+    // "confirma" con Enter, no cuando el usuario deja de teclear):
+    //   - Si la salida es un prompt de clave -> pausa (espera Enter del usuario).
+    //   - Si aun se espera la clave (usuario no ha dado Enter), ignora el eco
+    //     (p.ej. asteriscos) y sigue esperando.
+    //   - Si el usuario ya dio Enter y esto NO es otro prompt -> clave aceptada,
+    //     el comando corre; se retoma el ritmo por silencio.
+    function procesarSalidaBloque(texto) {
+        if (!bloqueActivo) { return; }
+        var esPromptClave = RE_PROMPT_CLAVE_CLI.test(String(texto).replace(RE_ANSI_CLI, ""));
+        if (esPromptClave) {
+            bloqueEsperaClave = true;      // pide clave: pausa hasta el Enter del usuario
+            bloqueVerificaClave = false;
+            clearTimeout(bloqueQuietTimer);
+            return;
+        }
+        if (bloqueEsperaClave) {
+            return;                        // eco de la clave aun sin enviar: seguir esperando
+        }
+        if (bloqueVerificaClave) {
+            bloqueVerificaClave = false;   // Enter dado y no re-pregunto: clave aceptada
+        }
+        armarSilencioBloque();
+    }
+
+    // Enter del usuario mientras el bloque espera una contraseña: la confirma.
+    // Pasa a "verificando" hasta ver el veredicto del shell (si vuelve a pedir
+    // clave, fue incorrecta y se sigue esperando). Devuelve true si consumio el
+    // Enter (para no registrarlo como comando: es secreto).
+    function bloqueEnterClave() {
+        if (bloqueActivo && bloqueEsperaClave) {
+            bloqueEsperaClave = false;
+            bloqueVerificaClave = true;
+            clearTimeout(bloqueQuietTimer);
+            return true;
+        }
+        return false;
+    }
+
+    // Cancela la ejecucion por pasos (al desconectar / cerrar la sesion).
+    function cancelarBloque() {
+        clearTimeout(bloqueQuietTimer);
+        bloqueCola = [];
+        bloqueActivo = false;
+        bloqueEsperaClave = false;
+        bloqueVerificaClave = false;
     }
 
     // Muestra el formulario. item = objeto para editar, o null para alta.
@@ -648,7 +1025,7 @@
             ajustar();
             cargarSugerencias();
         });
-        socket.on("output", function (d) { if (term) { term.write(d); } });
+        socket.on("output", function (d) { if (term) { term.write(d); } procesarSalidaBloque(d); });
         socket.on("ssh_error", function (d) {
             setEstado("Error SSH", "error");
             if (term) { term.writeln("\r\n*** " + ((d && d.mensaje) || "Error SSH") + " ***"); }
@@ -667,6 +1044,7 @@
 
     function finalizar() {
         conectado = false;
+        cancelarBloque();   // corta cualquier bloque en ejecucion por pasos
         lineaActual = ""; enEscape = false; ocultarSug();
         $btnDes.prop("disabled", true);
         $sel.prop("disabled", false);
@@ -815,6 +1193,30 @@
             if (accion === "ejecutar") { ejecutarInstr($(this).attr("data-cmd")); }
             else if (accion === "editar") { mostrarFormInstr(instrPorId[$(this).attr("data-id")]); }
             else if (accion === "eliminar") { eliminarInstr($(this).attr("data-id")); }
+        });
+        // Generador de bloques: "Generar bloque" arranca un bloque NUEVO (limpio);
+        // cerrar/cancelar descarta y resetea el estado (por si venia de editar).
+        $("#instrGenerarBloque").on("click", function () { limpiarBloque(); toggleBloques(true); });
+        $("#bloquesCerrar, #bloquesCancelar").on("click", function () { toggleBloques(false); limpiarBloque(); });
+        $("#bloquesGuardar").on("click", guardarBloque);
+        // Acciones sobre un bloque guardado: ejecutar / editar / eliminar.
+        $("#bloquesGuardados").on("click", "[data-accion]", function () {
+            var accion = $(this).attr("data-accion");
+            var id = $(this).attr("data-id");
+            if (accion === "ejecutar-bloque") { ejecutarBloque(id); }
+            else if (accion === "editar-bloque") { editarBloque(id); }
+            else if (accion === "eliminar-bloque") { eliminarBloque(id); }
+        });
+        // Pestaña "Bloques de comando": cierra el generador (su lista de
+        // origen vive en la otra pestaña) y carga perezosa los bloques.
+        $("#instrtab-bloques").on("shown.bs.tab", function () {
+            toggleBloques(false);
+            cargarBloquesGuardados(false);
+        });
+        // Quitar un comando ya soltado en el bloque.
+        $("#bloquesZona").on("click", ".consola__bloque-quitar", function () {
+            $(this).closest(".consola__bloque-item").remove();
+            actualizarVacioBloques();
         });
         // Formulario del catalogo (crear / editar).
         $("#instrNueva").on("click", function () { mostrarFormInstr(null); });

@@ -678,26 +678,67 @@ $tabs = [
        - FORMULARIO: crear/editar una instruccion (categoria, titulo, descripcion,
          comando). Los datos salen de consola_instrucciones.php (GET/POST/DELETE). -->
 <div class="modal fade" id="modalInstrucciones" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable consola__instr-dialog">
         <div class="modal-content">
             <div class="modal-header">
                 <h2 class="modal-title h6"><i class="bi bi-lightning-charge" aria-hidden="true"></i> Instrucciones rápidas</h2>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
             </div>
             <div class="modal-body">
-                <!-- Vista LISTA -->
+                <!-- Vista LISTA: dos pestañas -> Comandos (catalogo) y Bloques. -->
                 <div id="instrVista">
-                    <div class="consola__instr-top">
-                        <p class="form-text mt-0 mb-0">
-                            <i class="bi bi-info-circle" aria-hidden="true"></i>
-                            <i class="bi bi-play-fill" aria-hidden="true"></i> ejecuta de inmediato en la terminal conectada.
-                        </p>
-                        <button type="button" class="btn btn-primary btn-sm" id="instrNueva">
-                            <i class="bi bi-plus-lg" aria-hidden="true"></i> Nueva instrucción
-                        </button>
-                    </div>
-                    <div id="instrLista" class="consola__instr">
-                        <div class="consola__cargando">Cargando…</div>
+                    <ul class="nav nav-tabs detalle-tabs consola__instr-tabs" id="instrTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="instrtab-comandos" data-bs-toggle="tab"
+                                    data-bs-target="#instrpane-comandos" type="button" role="tab"
+                                    aria-controls="instrpane-comandos" aria-selected="true">
+                                <i class="bi bi-terminal" aria-hidden="true"></i> Comandos
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="instrtab-bloques" data-bs-toggle="tab"
+                                    data-bs-target="#instrpane-bloques" type="button" role="tab"
+                                    aria-controls="instrpane-bloques" aria-selected="false">
+                                <i class="bi bi-boxes" aria-hidden="true"></i> Bloques de comando
+                            </button>
+                        </li>
+                    </ul>
+
+                    <div class="tab-content consola__instr-tabs-cont" id="instrTabsContent">
+                        <!-- Pestaña Comandos: catalogo de instrucciones -->
+                        <div class="tab-pane fade show active" id="instrpane-comandos" role="tabpanel"
+                             aria-labelledby="instrtab-comandos">
+                            <div class="consola__instr-top">
+                                <p class="form-text mt-0 mb-0">
+                                    <i class="bi bi-info-circle" aria-hidden="true"></i>
+                                    <i class="bi bi-play-fill" aria-hidden="true"></i> ejecuta de inmediato en la terminal conectada.
+                                </p>
+                                <div class="consola__instr-top-btns">
+                                    <button type="button" class="btn btn-outline-primary btn-sm" id="instrGenerarBloque"
+                                            title="Armar bloques con los comandos del catálogo">
+                                        <i class="bi bi-boxes" aria-hidden="true"></i> Generar bloque de código
+                                    </button>
+                                    <button type="button" class="btn btn-primary btn-sm" id="instrNueva">
+                                        <i class="bi bi-plus-lg" aria-hidden="true"></i> Nueva instrucción
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="instrLista" class="consola__instr">
+                                <div class="consola__cargando">Cargando…</div>
+                            </div>
+                        </div>
+
+                        <!-- Pestaña Bloques: bloques de comandos guardados (solo lectura) -->
+                        <div class="tab-pane fade" id="instrpane-bloques" role="tabpanel"
+                             aria-labelledby="instrtab-bloques">
+                            <p class="form-text mt-0">
+                                <i class="bi bi-info-circle" aria-hidden="true"></i>
+                                Bloques guardados desde «Generar bloque de código». Aquí puedes revisar los comandos que contiene cada uno.
+                            </p>
+                            <div id="bloquesGuardados" class="consola__instr">
+                                <div class="consola__cargando">Cargando…</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -743,6 +784,41 @@ $tabs = [
                     <button type="button" class="btn btn-outline-secondary btn-sm" id="instrCancelar">Cancelar</button>
                     <button type="button" class="btn btn-primary btn-sm" id="instrGuardar"><i class="bi bi-check-lg"></i> Guardar</button>
                 </div>
+            </div>
+        </div>
+
+        <!-- Panel "Generar bloque de codigo": se abre pegado al modal (mismo
+             tamaño) al pulsar «Generar bloque de código» o al editar un bloque.
+             El usuario arrastra aqui los comandos del catalogo, quita los que
+             sobren y guarda. Al editar se precarga con el nombre y los comandos
+             del bloque; el titulo y el boton cambian de texto (los alterna el JS). -->
+        <div class="modal-content consola__bloques" id="bloquesPanel" hidden>
+            <div class="modal-header">
+                <h2 class="modal-title h6"><i class="bi bi-boxes" aria-hidden="true"></i>
+                    <span id="bloquesTitulo">Generar bloque de código</span></h2>
+                <button type="button" class="btn-close" id="bloquesCerrar" aria-label="Cerrar generador de bloques"></button>
+            </div>
+            <div class="modal-body">
+                <div id="bloquesError" class="alert alert-danger d-none" role="alert"></div>
+                <div class="mb-3">
+                    <label class="form-label" for="bloqueNombre">Nombre del bloque *</label>
+                    <input class="form-control" type="text" id="bloqueNombre" maxlength="120"
+                           placeholder="Ej: Puesta a punto de servidor web" autocomplete="off">
+                </div>
+                <p class="form-text mt-0">
+                    <i class="bi bi-info-circle" aria-hidden="true"></i>
+                    Arrastra los comandos de la izquierda hasta esta zona para armar un bloque. Los comandos
+                    seguirán existiendo de forma individual en el catálogo.
+                </p>
+                <div id="bloquesZona" class="consola__bloques-zona">
+                    <div class="consola__vacio">Aún no hay comandos en el bloque. Arrastra alguno desde la izquierda.</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="bloquesCancelar">Cerrar</button>
+                <button type="button" class="btn btn-primary btn-sm" id="bloquesGuardar">
+                    <i class="bi bi-check-lg" aria-hidden="true"></i> <span id="bloquesGuardarTexto">Guardar bloque</span>
+                </button>
             </div>
         </div>
     </div>
