@@ -79,30 +79,6 @@ $tabs = [
             </div>
         </section>
 
-        <!-- Barra de filtros (reutilizable): buscador dinamico + rango de fechas -->
-        <div class="detalle-filtros">
-            <div class="toolbar__search">
-                <i class="bi bi-search" aria-hidden="true"></i>
-                <input type="search" id="detBuscar" class="form-control"
-                       placeholder="Buscar en la tabla…" autocomplete="off">
-            </div>
-            <div class="ax-dropfecha" id="detFechas">
-                <button type="button" class="btn btn-outline-secondary btn-sm ax-dropfecha__toggle" data-rol="toggle">
-                    <i class="bi bi-calendar-range" aria-hidden="true"></i> Filtros
-                </button>
-                <div class="ax-dropfecha__panel d-none" data-rol="panel">
-                    <label class="ax-dropfecha__label" for="detFechaDesde">Fecha inicio</label>
-                    <input type="date" class="form-control form-control-sm" id="detFechaDesde" data-rol="desde">
-                    <label class="ax-dropfecha__label" for="detFechaHasta">Fecha final</label>
-                    <input type="date" class="form-control form-control-sm" id="detFechaHasta" data-rol="hasta">
-                    <div class="ax-dropfecha__acciones">
-                        <button type="button" class="btn btn-outline-secondary btn-sm" data-rol="limpiar">Limpiar</button>
-                        <button type="button" class="btn btn-primary btn-sm" data-rol="aplicar">Aplicar</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
         <!-- Pestañas (orden estricto) -->
         <ul class="nav nav-tabs detalle-tabs" id="detTabs" role="tablist">
             <?php foreach ($tabs as $i => $t): ?>
@@ -168,6 +144,10 @@ $tabs = [
                                 <button type="button" class="btn btn-outline-secondary btn-sm" id="consolaInstrucciones"
                                         title="Instrucciones rápidas (crear y ejecutar comandos)">
                                     <i class="bi bi-lightning-charge" aria-hidden="true"></i> Instrucciones
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" id="consolaLlaveMaestra"
+                                        title="Palabra maestra que cifra las credenciales SSH">
+                                    <i class="bi bi-key" aria-hidden="true"></i> Llave maestra
                                 </button>
                                 <span class="consola__estado" id="consolaEstado" data-estado="off">Desconectado</span>
                             </div>
@@ -647,6 +627,50 @@ $tabs = [
     </div>
 </div>
 
+<!-- Modal "Llave maestra": palabra maestra GLOBAL que cifra las credenciales
+     SSH. NO se guarda en el sistema (ni env, ni sesion, ni BD). El modal tiene
+     dos modos que alterna vps_consola.js segun consola_llave.php GET:
+       - configurar (primera vez): solo la palabra nueva.
+       - cambiar: palabra actual + palabra nueva (rota la llave sin re-cifrar). -->
+<div class="modal fade" id="modalLlaveMaestra" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title h6" id="llaveTitulo">Configurar palabra maestra</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <div id="formLlaveError" class="alert alert-danger d-none" role="alert"></div>
+                <p class="text-muted small" id="llaveAviso"></p>
+                <form id="formLlave" novalidate autocomplete="off">
+                    <div class="row g-3">
+                        <div class="col-12 d-none" data-rol="campo-actual">
+                            <label class="form-label" for="llaveActual">Palabra maestra actual *</label>
+                            <input class="form-control" type="password" id="llaveActual" autocomplete="current-password">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label" for="llaveNueva">Palabra maestra nueva *</label>
+                            <input class="form-control" type="password" id="llaveNueva" minlength="8" autocomplete="new-password" required>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label" for="llaveRepetir">Repite la palabra nueva *</label>
+                            <input class="form-control" type="password" id="llaveRepetir" minlength="8" autocomplete="new-password" required>
+                        </div>
+                    </div>
+                    <div class="form-text mt-2">
+                        <i class="bi bi-exclamation-triangle" aria-hidden="true"></i>
+                        Esta palabra no se guarda en ningún lado. Si se olvida, las credenciales no podrán descifrarse.
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary btn-sm" id="btnGuardarLlave"><i class="bi bi-check-lg"></i> Guardar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Modal "Instrucciones rapidas": catalogo CONFIGURABLE de comandos. Dos vistas
      dentro del mismo modal (las alterna vps_consola.js):
        - LISTA: instrucciones agrupadas por categoria; cada una con acciones
@@ -654,26 +678,67 @@ $tabs = [
        - FORMULARIO: crear/editar una instruccion (categoria, titulo, descripcion,
          comando). Los datos salen de consola_instrucciones.php (GET/POST/DELETE). -->
 <div class="modal fade" id="modalInstrucciones" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable consola__instr-dialog">
         <div class="modal-content">
             <div class="modal-header">
                 <h2 class="modal-title h6"><i class="bi bi-lightning-charge" aria-hidden="true"></i> Instrucciones rápidas</h2>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
             </div>
             <div class="modal-body">
-                <!-- Vista LISTA -->
+                <!-- Vista LISTA: dos pestañas -> Comandos (catalogo) y Bloques. -->
                 <div id="instrVista">
-                    <div class="consola__instr-top">
-                        <p class="form-text mt-0 mb-0">
-                            <i class="bi bi-info-circle" aria-hidden="true"></i>
-                            <i class="bi bi-play-fill" aria-hidden="true"></i> ejecuta de inmediato en la terminal conectada.
-                        </p>
-                        <button type="button" class="btn btn-primary btn-sm" id="instrNueva">
-                            <i class="bi bi-plus-lg" aria-hidden="true"></i> Nueva instrucción
-                        </button>
-                    </div>
-                    <div id="instrLista" class="consola__instr">
-                        <div class="consola__cargando">Cargando…</div>
+                    <ul class="nav nav-tabs detalle-tabs consola__instr-tabs" id="instrTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="instrtab-comandos" data-bs-toggle="tab"
+                                    data-bs-target="#instrpane-comandos" type="button" role="tab"
+                                    aria-controls="instrpane-comandos" aria-selected="true">
+                                <i class="bi bi-terminal" aria-hidden="true"></i> Comandos
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="instrtab-bloques" data-bs-toggle="tab"
+                                    data-bs-target="#instrpane-bloques" type="button" role="tab"
+                                    aria-controls="instrpane-bloques" aria-selected="false">
+                                <i class="bi bi-boxes" aria-hidden="true"></i> Bloques de comando
+                            </button>
+                        </li>
+                    </ul>
+
+                    <div class="tab-content consola__instr-tabs-cont" id="instrTabsContent">
+                        <!-- Pestaña Comandos: catalogo de instrucciones -->
+                        <div class="tab-pane fade show active" id="instrpane-comandos" role="tabpanel"
+                             aria-labelledby="instrtab-comandos">
+                            <div class="consola__instr-top">
+                                <p class="form-text mt-0 mb-0">
+                                    <i class="bi bi-info-circle" aria-hidden="true"></i>
+                                    <i class="bi bi-play-fill" aria-hidden="true"></i> ejecuta de inmediato en la terminal conectada.
+                                </p>
+                                <div class="consola__instr-top-btns">
+                                    <button type="button" class="btn btn-outline-primary btn-sm" id="instrGenerarBloque"
+                                            title="Armar bloques con los comandos del catálogo">
+                                        <i class="bi bi-boxes" aria-hidden="true"></i> Generar bloque de código
+                                    </button>
+                                    <button type="button" class="btn btn-primary btn-sm" id="instrNueva">
+                                        <i class="bi bi-plus-lg" aria-hidden="true"></i> Nueva instrucción
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="instrLista" class="consola__instr">
+                                <div class="consola__cargando">Cargando…</div>
+                            </div>
+                        </div>
+
+                        <!-- Pestaña Bloques: bloques de comandos guardados (solo lectura) -->
+                        <div class="tab-pane fade" id="instrpane-bloques" role="tabpanel"
+                             aria-labelledby="instrtab-bloques">
+                            <p class="form-text mt-0">
+                                <i class="bi bi-info-circle" aria-hidden="true"></i>
+                                Bloques guardados desde «Generar bloque de código». Aquí puedes revisar los comandos que contiene cada uno.
+                            </p>
+                            <div id="bloquesGuardados" class="consola__instr">
+                                <div class="consola__cargando">Cargando…</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -719,6 +784,41 @@ $tabs = [
                     <button type="button" class="btn btn-outline-secondary btn-sm" id="instrCancelar">Cancelar</button>
                     <button type="button" class="btn btn-primary btn-sm" id="instrGuardar"><i class="bi bi-check-lg"></i> Guardar</button>
                 </div>
+            </div>
+        </div>
+
+        <!-- Panel "Generar bloque de codigo": se abre pegado al modal (mismo
+             tamaño) al pulsar «Generar bloque de código» o al editar un bloque.
+             El usuario arrastra aqui los comandos del catalogo, quita los que
+             sobren y guarda. Al editar se precarga con el nombre y los comandos
+             del bloque; el titulo y el boton cambian de texto (los alterna el JS). -->
+        <div class="modal-content consola__bloques" id="bloquesPanel" hidden>
+            <div class="modal-header">
+                <h2 class="modal-title h6"><i class="bi bi-boxes" aria-hidden="true"></i>
+                    <span id="bloquesTitulo">Generar bloque de código</span></h2>
+                <button type="button" class="btn-close" id="bloquesCerrar" aria-label="Cerrar generador de bloques"></button>
+            </div>
+            <div class="modal-body">
+                <div id="bloquesError" class="alert alert-danger d-none" role="alert"></div>
+                <div class="mb-3">
+                    <label class="form-label" for="bloqueNombre">Nombre del bloque *</label>
+                    <input class="form-control" type="text" id="bloqueNombre" maxlength="120"
+                           placeholder="Ej: Puesta a punto de servidor web" autocomplete="off">
+                </div>
+                <p class="form-text mt-0">
+                    <i class="bi bi-info-circle" aria-hidden="true"></i>
+                    Arrastra los comandos de la izquierda hasta esta zona para armar un bloque. Los comandos
+                    seguirán existiendo de forma individual en el catálogo.
+                </p>
+                <div id="bloquesZona" class="consola__bloques-zona">
+                    <div class="consola__vacio">Aún no hay comandos en el bloque. Arrastra alguno desde la izquierda.</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="bloquesCancelar">Cerrar</button>
+                <button type="button" class="btn btn-primary btn-sm" id="bloquesGuardar">
+                    <i class="bi bi-check-lg" aria-hidden="true"></i> <span id="bloquesGuardarTexto">Guardar bloque</span>
+                </button>
             </div>
         </div>
     </div>

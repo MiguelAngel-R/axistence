@@ -10,6 +10,18 @@ window.AX = window.AX || {};
 (function (AX, $) {
     "use strict";
 
+    /* --- SweetAlert2 sobre modales de Bootstrap -------------------- */
+    // Cuando un diálogo de Swal (p. ej. AX.pedirClave) se abre ENCIMA de un
+    // modal de Bootstrap, el "focus trap" del modal intenta devolver el foco
+    // al modal y bloquea el tecleo en el input de Swal. Se deja pasar el foco
+    // si el destino está dentro del contenedor de Swal. Fase de captura +
+    // stopImmediatePropagation para adelantarse al handler de Bootstrap.
+    document.addEventListener("focusin", function (e) {
+        if (e.target && e.target.closest && e.target.closest(".swal2-container")) {
+            e.stopImmediatePropagation();
+        }
+    }, true);
+
     /* --- Utilidades ------------------------------------------------ */
 
     // Escapa texto para insertarlo de forma segura en HTML (evita XSS).
@@ -91,6 +103,36 @@ window.AX = window.AX || {};
             reverseButtons: true,
             focusCancel: true,
             customClass: opts.peligro ? { confirmButton: "swal2-confirm--peligro" } : {}
+        });
+    };
+
+    // Pide una clave/palabra por teclado (campo password). Devuelve una
+    // promesa que resuelve con el texto tecleado, o null si se cancela.
+    // La palabra NO se guarda: solo se resuelve para usarla al instante.
+    // opts: { titulo, texto, placeholder, confirmar, cancelar, minimo }
+    AX.pedirClave = function (opts) {
+        opts = opts || {};
+        var minimo = opts.minimo || 0;
+        return Swal.fire({
+            icon: opts.icon || "question",
+            title: opts.titulo || "Palabra maestra",
+            text: opts.texto || "",
+            input: "password",
+            inputPlaceholder: opts.placeholder || "Escribe la palabra maestra",
+            inputAttributes: { autocapitalize: "off", autocorrect: "off", autocomplete: "off" },
+            showCancelButton: true,
+            confirmButtonText: opts.confirmar || "Continuar",
+            cancelButtonText: opts.cancelar || "Cancelar",
+            reverseButtons: true,
+            inputValidator: function (valor) {
+                if (!valor) { return "Escribe la palabra maestra"; }
+                if (minimo && valor.length < minimo) {
+                    return "Debe tener al menos " + minimo + " caracteres";
+                }
+                return undefined;
+            }
+        }).then(function (res) {
+            return res.isConfirmed ? res.value : null;
         });
     };
 

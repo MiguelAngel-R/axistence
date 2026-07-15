@@ -9,30 +9,48 @@ declare(strict_types=1);
 //  PHP. Devuelve el secreto DESCIFRADO (password o clave privada) para que
 //  Node establezca la conexion. La sesion nunca vive en el navegador.
 //
-//  POST { token }
+//  El descifrado usa la DEK que abre la palabra maestra (clave_maestra), que
+//  Node reenvia desde el navegador. La palabra nunca se guarda ni se loguea.
+//
+//  POST { token, clave_maestra }
 //  200 -> { ok, data: { host, puerto, usuario, tipo_auth, secreto, passphrase } }
-//  401 token ; 404 credencial ; 409 credencial ambigua ; 500 fallo al descifrar
+//  401 token/palabra ; 404 credencial ; 409 credencial ambigua o esquema viejo
 // =====================================================================
 
 require_once __DIR__ . '/../config/bootstrap.php';
 require_once __DIR__ . '/../helpers/consola_tokens.php';
 require_once __DIR__ . '/../helpers/consola_cifrado.php';
+require_once __DIR__ . '/../helpers/consola_llave_maestra.php';
 
 solo_metodo('POST');
 consola_requiere_node_key();
 
 const UUID_RE = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i';
 
-[$payload] = consola_token_de_body();
+[$payload, $in] = consola_token_de_body();
 
-$vpsId       = (string)($payload['vps_id'] ?? '');
+$vpsId        = (string)($payload['vps_id'] ?? '');
 $credencialId = (string)($payload['credencial_id'] ?? '');
+$claveMaestra = (string)($in['clave_maestra'] ?? '');
 
 if (!preg_match(UUID_RE, $vpsId)) {
     json_error('VPS del token no valido', 422);
 }
+if ($claveMaestra === '') {
+    json_error('Palabra maestra requerida', 422);
+}
 
 $pdo = Database::get();
+
+// Abrir la DEK con la palabra maestra antes de tocar credenciales.
+$km = consola_km_abrir($pdo, $claveMaestra);
+if ($km['estado'] === 'sin_configurar') {
+    json_error('La llave maestra no esta configurada', 409);
+}
+if ($km['estado'] === 'clave_incorrecta') {
+    json_error('Palabra maestra incorrecta', 401);
+}
+$dek = $km['dek'];
 
 if ($credencialId !== '' && preg_match(UUID_RE, $credencialId)) {
     $stmt = $pdo->prepare(
@@ -61,14 +79,23 @@ if (!$cred) {
     json_error('Credencial SSH no encontrada', 404);
 }
 
-$secreto = consola_descifrar((string)$cred['secreto_cifrado']);
+// Credencial guardada con el esquema anterior (clave desde env): hay que
+// recapturarla con la palabra maestra para poder descifrarla.
+if (consola_es_legacy((string)$cred['secreto_cifrado'])) {
+    $dek = null;
+    json_error('Esta credencial usa el esquema anterior; vuelvela a guardar con la palabra maestra', 409);
+}
+
+$secreto = consola_gcm_descifrar((string)$cred['secreto_cifrado'], $dek);
 if ($secreto === null) {
+    $dek = null;
     json_error('No se pudo descifrar la credencial', 500);
 }
 $passphrase = null;
 if (!empty($cred['passphrase_cifrada'])) {
-    $passphrase = consola_descifrar((string)$cred['passphrase_cifrada']);
+    $passphrase = consola_gcm_descifrar((string)$cred['passphrase_cifrada'], $dek);
 }
+$dek = null; // se suelta la DEK tras descifrar
 
 json_ok([
     'host'       => $cred['host'],
