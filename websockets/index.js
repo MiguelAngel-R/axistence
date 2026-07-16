@@ -38,13 +38,14 @@ import ssl from './modulos/ssl.js';
 import correo from './modulos/correo.js';
 import proyectos from './modulos/proyectos.js';
 import vps from './modulos/vps.js';
+import notificaciones from './modulos/notificaciones.js';
 
 const { Client: SSHClient } = ssh2;
 
 // --- Registro de modulos de listados --------------------------------
 // Para sumar un modulo: crear ./modulos/<modulo>.js (mismo contrato que
 // clientes.js) e incluirlo aqui.
-const MODULOS   = [clientes, proveedores, dominios, ssl, correo, proyectos, vps];
+const MODULOS   = [clientes, proveedores, dominios, ssl, correo, proyectos, vps, notificaciones];
 const porNombre = new Map(MODULOS.map((m) => [m.nombre, m]));
 
 // --- Configuracion (env con defaults de desarrollo) ------------------
@@ -69,6 +70,8 @@ const SESION_ABRIR_URL  = `${PHP_URL}/endpoints/vps/consola_sesion_abrir.php`;
 const COMANDO_URL       = `${PHP_URL}/endpoints/vps/consola_comando.php`;
 const SESION_CERRAR_URL = `${PHP_URL}/endpoints/vps/consola_sesion_cerrar.php`;
 const HUERFANAS_URL     = `${PHP_URL}/endpoints/vps/consola_cerrar_huerfanas.php`;
+// Notificaciones: valida el token de identidad del socket (S2S, misma node-key).
+const NOTIF_VALIDAR_URL = `${PHP_URL}/endpoints/notificaciones/validar.php`;
 // Timeout por inactividad del shell (ms). 0 lo desactiva.
 const IDLE_MS     = Number(process.env.AXISTENCE_SSH_IDLE_MS || 5 * 60 * 1000);
 
@@ -132,7 +135,52 @@ io.on('connection', (socket) => {
         mod.conexion(io, socket);
         socket.emit('unido', { modulo: mod.nombre });
     });
+
+    // NOTIFICACIONES: el navegador se identifica con un token firmado por PHP
+    // para entrar a SU sala 'usuario:<id>'. El usuario lo pone PHP (validar.php),
+    // no el navegador, asi nadie escucha notificaciones de otro.
+    socket.on('autenticar_usuario', async (token) => {
+        const usuarioId = await validarUsuarioContraPhp(String(token || ''));
+        if (!usuarioId) {
+            socket.emit('no_autenticado');
+            return;
+        }
+        socket.join('usuario:' + usuarioId);
+        socket.data.usuarioId = usuarioId;
+        socket.emit('autenticado', { usuario_id: usuarioId });
+        console.log(`[notif] socket ${socket.id} autenticado -> usuario:${usuarioId}`);
+    });
 });
+
+/**
+ * Valida contra PHP (server-to-server, node-key) el token de identidad que
+ * envia un socket. Devuelve el usuario_id si es valido, o null. Nunca lanza.
+ * @param {string} token
+ * @returns {Promise<string|null>}
+ */
+async function validarUsuarioContraPhp(token) {
+    if (!token) {
+        return null;
+    }
+    try {
+        const resp = await fetch(NOTIF_VALIDAR_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Consola-Node-Key': NODE_KEY,
+            },
+            body: JSON.stringify({ token }),
+        });
+        const json = await resp.json().catch(() => null);
+        if (resp.ok && json && json.ok && json.data && json.data.usuario_id) {
+            return String(json.data.usuario_id);
+        }
+        return null;
+    } catch (err) {
+        console.error('[notif] No se pudo validar el token de usuario:', err.message);
+        return null;
+    }
+}
 
 // =====================================================================
 //  NAMESPACE '/consola'  ->  CONSOLA SSH EN VIVO

@@ -27,7 +27,7 @@ if (mb_strlen($comentario) > 4000) {
 }
 
 $pdo = Database::get();
-kanban_proyecto_o_error($pdo, $proyectoId);
+$proyecto = kanban_proyecto_o_error($pdo, $proyectoId);
 
 // La tarea debe pertenecer al proyecto (evita comentar en tableros ajenos).
 $stmt = $pdo->prepare(
@@ -59,7 +59,7 @@ registrar_auditoria(
     ['comentario' => $comentario]
 );
 
-$comentario = [
+$comentarioCreado = [
     'id'         => $fila['id'],
     'comentario' => $fila['comentario'],
     'fecha'      => $fila['fecha'],
@@ -71,9 +71,44 @@ $comentario = [
 // (modal) para que agreguen el comentario sin recargar. Viajan proyecto_id (para
 // filtrar por detalle) y tarea_id (para saber si es la tarjeta abierta), ademas
 // del comentario. Se emite SOLO tras la insercion y la auditoria (fire-and-forget).
-notificar_socket('proyectos', 'comentario:creado', array_merge($comentario, [
+notificar_socket('proyectos', 'comentario:creado', array_merge($comentarioCreado, [
     'proyecto_id' => $proyectoId,
     'tarea_id'    => $tareaId,
 ]));
 
-json_ok($comentario, 'Comentario agregado');
+// --- Notificacion in-app (Fase 7) -----------------------------------
+// Avisa a quienes siguen la conversacion de la tarjeta: sus responsables y
+// quienes ya comentaron antes, sin repetir y excluyendo al autor (no se
+// autonotifica). El clic lleva al tablero con la tarjeta abierta.
+// Nota: los prepares son nativos (EMULATE_PREPARES=false), por eso cada rama
+// del UNION lleva su propio placeholder: pgsql no admite repetir el mismo.
+$stmt = $pdo->prepare(
+    'SELECT usuario_id FROM public.tarea_responsables WHERE tarea_id = :t1
+     UNION
+     SELECT autor_id   FROM public.tarea_comentarios  WHERE tarea_id = :t2 AND autor_id IS NOT NULL'
+);
+$stmt->execute([':t1' => $tareaId, ':t2' => $tareaId]);
+$interesados = array_values(array_filter(
+    array_column($stmt->fetchAll(), 'usuario_id'),
+    static fn ($uid) => $uid !== ($u['id'] ?? null)
+));
+
+if ($interesados) {
+    // Extracto corto: la notificacion es un aviso, no el comentario completo.
+    $extracto = mb_strlen($comentario) > 120
+        ? mb_substr($comentario, 0, 120) . '…'
+        : $comentario;
+
+    notificar(
+        $interesados,
+        'Proyectos',
+        'comentario_nuevo',
+        'Nuevo comentario en una tarea',
+        ($u['nombre_completo'] ?? 'Alguien') . ' comento en «' . $titulo . '»: ' . $extracto,
+        'tarea',
+        $tareaId,
+        ['url' => 'index.php?vista=proyectos&detalle=' . $proyectoId . '&tarea=' . $tareaId]
+    );
+}
+
+json_ok($comentarioCreado, 'Comentario agregado');

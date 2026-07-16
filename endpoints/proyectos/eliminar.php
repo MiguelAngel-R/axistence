@@ -35,6 +35,13 @@ if ($nombre === false) {
     json_error('Proyecto no encontrado', 404);
 }
 
+// Equipo ANTES de borrar: proyecto_equipo cae por ON DELETE CASCADE, asi que
+// despues del DELETE ya no habria a quien avisar. Se lee aqui y se notifica
+// mas abajo, una vez confirmado el borrado.
+$stmt = $pdo->prepare('SELECT usuario_id FROM public.proyecto_equipo WHERE proyecto_id = :id');
+$stmt->execute([':id' => $id]);
+$equipo = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
 $pdo->beginTransaction();
 try {
     // Primero las tarjetas (evita el conflicto RESTRICT columna<-tarjeta al
@@ -65,5 +72,28 @@ registrar_auditoria(
 // Se emite SOLO tras el borrado y la auditoria (no se emite en el caso 409:
 // ahi no hubo borrado).
 notificar_socket('proyectos', 'proyecto:eliminado', ['id' => $id]);
+
+// --- Notificacion in-app (Fase 7) -----------------------------------
+// Avisa al equipo que trabajaba el proyecto (leido antes del DELETE), menos a
+// quien lo elimina. NO se manda 'datos.url': el proyecto ya no existe y el
+// deep-link llevaria a un detalle inexistente; sin url la campana solo marca
+// la notificacion como leida al hacer clic (app.js). Se conserva entidad_id
+// para poder rastrearla (no hay FK contra proyectos).
+$actor = usuario_actual();
+$avisar = array_values(array_filter(
+    $equipo,
+    static fn ($uid) => $uid !== ($actor['id'] ?? null)
+));
+if ($avisar) {
+    notificar(
+        $avisar,
+        'Proyectos',
+        'proyecto_eliminado',
+        'Eliminaron un proyecto',
+        'El proyecto «' . $nombre . '» en el que trabajabas fue eliminado',
+        'proyecto',
+        $id
+    );
+}
 
 json_ok(['id' => $id], 'Proyecto eliminado correctamente');

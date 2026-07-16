@@ -485,6 +485,18 @@ window.AX = window.AX || {};
         }
     };
 
+    // Lee el parametro ?tarea= de la URL (uuid de una tarjeta a abrir tras la
+    // navegacion, p. ej. desde una notificacion). Devuelve el uuid validado o
+    // null. Se usa junto con ?detalle= (proyecto) para abrir la tarjeta directa.
+    AX.tareaSolicitada = function () {
+        try {
+            var valor = new URLSearchParams(window.location.search).get("tarea");
+            return (valor && UUID_RE.test(valor)) ? valor : null;
+        } catch (e) {
+            return null;
+        }
+    };
+
     // Indica si un evento de clic ocurrio sobre un enlace cruzado. Se usa en
     // los manejadores de clic de fila para NO abrir el detalle propio cuando
     // el usuario pulsa un enlace hacia otro producto (deja navegar al enlace).
