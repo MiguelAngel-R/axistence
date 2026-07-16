@@ -30,7 +30,7 @@ foreach ($brutos as $x) {
 }
 
 $pdo = Database::get();
-kanban_proyecto_o_error($pdo, $proyectoId);
+$proyecto = kanban_proyecto_o_error($pdo, $proyectoId);
 
 // La tarea debe pertenecer al proyecto.
 $stmt = $pdo->prepare(
@@ -41,6 +41,12 @@ $titulo = $stmt->fetchColumn();
 if ($titulo === false) {
     json_error('La tarea no pertenece al proyecto', 404);
 }
+
+// Responsables ANTES del cambio: para notificar solo a los RECIEN agregados
+// (el conjunto se reemplaza; los que ya estaban no reciben aviso de nuevo).
+$stmt = $pdo->prepare('SELECT usuario_id FROM public.tarea_responsables WHERE tarea_id = :t');
+$stmt->execute([':t' => $tareaId]);
+$responsablesPrevios = array_column($stmt->fetchAll(), 'usuario_id');
 
 // Solo se pueden asignar integrantes del equipo del proyecto.
 if ($usuarios) {
@@ -97,5 +103,27 @@ registrar_auditoria(
     null,
     ['responsables' => $usuarios]
 );
+
+// --- Notificacion in-app (Fase 7) -----------------------------------
+// Avisa a los responsables RECIEN agregados (conjunto nuevo menos el previo),
+// excluyendo a quien realiza la asignacion (no se autonotifica). El clic lleva
+// al tablero del proyecto con la tarjeta abierta (deep-link ?detalle=&tarea=).
+$actor         = usuario_actual();
+$recienAsignados = array_values(array_filter(
+    array_diff($usuarios, $responsablesPrevios),
+    static fn ($uid) => $uid !== ($actor['id'] ?? null)
+));
+if ($recienAsignados) {
+    notificar(
+        $recienAsignados,
+        'Proyectos',
+        'tarea_asignada',
+        'Te asignaron una tarea',
+        'Tarea «' . $titulo . '» en el proyecto «' . ($proyecto['nombre_proyecto'] ?? '') . '»',
+        'tarea',
+        $tareaId,
+        ['url' => 'index.php?vista=proyectos&detalle=' . $proyectoId . '&tarea=' . $tareaId]
+    );
+}
 
 json_ok(['responsables' => $responsables], 'Responsables actualizados');

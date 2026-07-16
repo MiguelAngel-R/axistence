@@ -580,3 +580,131 @@ mark.ax-marca {
     .app-user { display: none; }
     .app-content { padding: var(--space-4); }
 }
+
+/* =====================================================================
+   Campana de notificaciones (topbar). Panel desplegable + badge.
+   ===================================================================== */
+.app-notif { position: relative; margin-left: auto; }
+/* Cuando existe la campana, ella toma el margen automatico y el bloque de
+   usuario queda pegado a su derecha. */
+.app-notif + .app-topbar__user { margin-left: var(--space-3); }
+
+.app-notif__btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    background: var(--c-surface);
+    border: 1px solid var(--c-line);
+    border-radius: var(--radius-button);
+    color: var(--c-text-muted);
+    font-size: 1.05rem;
+    cursor: pointer;
+    transition: color .12s, border-color .12s;
+}
+.app-notif__btn:hover { color: var(--c-text); border-color: var(--c-text-muted); }
+
+.app-notif__badge {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    min-width: 17px;
+    height: 17px;
+    padding: 0 4px;
+    border-radius: 9px;
+    background: var(--c-danger);
+    color: #fff;
+    font-size: .68rem;
+    font-weight: 600;
+    line-height: 17px;
+    text-align: center;
+}
+
+.app-notif__panel {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    width: 340px;
+    max-width: calc(100vw - 24px);
+    background: var(--c-surface);
+    border: 1px solid var(--c-line);
+    box-shadow: 0 10px 30px rgba(2, 6, 23, 0.12);
+    z-index: 1040;
+}
+
+.app-notif__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--c-line);
+}
+.app-notif__head-title { font-size: .82rem; font-weight: 600; color: var(--c-text); }
+.app-notif__head-acc { display: flex; gap: var(--space-2); }
+.app-notif__link {
+    background: none;
+    border: 0;
+    padding: 0;
+    font-size: .72rem;
+    color: var(--c-text-muted);
+    cursor: pointer;
+}
+.app-notif__link:hover { color: var(--c-text); text-decoration: underline; }
+
+.app-notif__list { max-height: 60vh; overflow-y: auto; }
+
+.app-notif__empty {
+    padding: var(--space-4);
+    text-align: center;
+    font-size: .78rem;
+    color: var(--c-text-muted);
+}
+
+.app-notif__item {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--c-line);
+    cursor: pointer;
+    transition: background .1s;
+}
+.app-notif__item:hover { background: var(--c-surface-alt); }
+.app-notif__item:last-child { border-bottom: 0; }
+
+/* Punto de "no leida": visible solo cuando la fila tiene is-no-leida. */
+.app-notif__dot {
+    flex: 0 0 auto;
+    width: 7px;
+    height: 7px;
+    margin-top: 6px;
+    border-radius: 50%;
+    background: transparent;
+}
+.app-notif__item.is-no-leida .app-notif__dot { background: var(--c-danger); }
+.app-notif__item.is-no-leida .app-notif__title { font-weight: 600; }
+
+.app-notif__body { flex: 1; min-width: 0; }
+.app-notif__title { font-size: .8rem; color: var(--c-text); }
+.app-notif__msg {
+    font-size: .74rem;
+    color: var(--c-text-muted);
+    margin-top: 1px;
+    word-break: break-word;
+}
+.app-notif__meta { font-size: .68rem; color: var(--c-text-muted); margin-top: 3px; }
+
+.app-notif__del {
+    flex: 0 0 auto;
+    background: none;
+    border: 0;
+    padding: 0 2px;
+    font-size: 1.05rem;
+    line-height: 1;
+    color: var(--c-text-muted);
+    cursor: pointer;
+}
+.app-notif__del:hover { color: var(--c-danger); }

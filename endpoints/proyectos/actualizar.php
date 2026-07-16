@@ -169,4 +169,17 @@ if ($filaProy) {
     notificar_socket('proyectos', 'proyecto:actualizado', $filaProy);
 }
 
+// --- Notificaciones in-app (Fase 7) ---------------------------------
+// Solo los integrantes que NO estaban en el equipo antes de guardar
+// ($relPrevio['equipo'], ya leido arriba para la auditoria).
+proyecto_notificar_equipo($id, $nombre, $rels['equipo'], $relPrevio['equipo']);
+
+// Cambio de estado: avisa al equipo que ya venia trabajando el proyecto. El
+// helper no hace nada si el estado no cambio ($actual es la fila de ANTES del
+// UPDATE) ni avisa a los recien agregados (esos ya reciben el aviso de arriba).
+proyecto_notificar_estado(
+    $id, $nombre, (string)$actual['estado'], $estado,
+    $rels['equipo'], $relPrevio['equipo']
+);
+
 json_ok(['id' => $id], 'Proyecto actualizado correctamente');

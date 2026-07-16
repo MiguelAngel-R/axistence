@@ -132,4 +132,9 @@ if ($filaProy) {
     notificar_socket('proyectos', 'proyecto:creado', $filaProy);
 }
 
+// --- Notificacion in-app (Fase 7) -----------------------------------
+// Proyecto nuevo: no hay equipo previo, asi que todo el equipo elegido es
+// "recien agregado" (menos quien lo crea).
+proyecto_notificar_equipo((string)$id, $nombre, $rels['equipo']);
+
 json_ok(['id' => $id], 'Proyecto creado correctamente');

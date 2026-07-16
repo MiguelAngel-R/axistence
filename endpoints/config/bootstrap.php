@@ -15,6 +15,7 @@ require_once __DIR__ . '/../helpers/auth.php';
 require_once __DIR__ . '/../helpers/audit.php';
 require_once __DIR__ . '/../helpers/passwords.php';
 require_once __DIR__ . '/../helpers/sockets.php';
+require_once __DIR__ . '/../helpers/notificaciones.php';
 
 // --- Errores ---------------------------------------------------------
 error_reporting(E_ALL);

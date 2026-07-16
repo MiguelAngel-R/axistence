@@ -1476,7 +1476,14 @@ $(function () {
     cargar();
     conectarSocketProyectos(); // tiempo real: escucha altas/ediciones/borrados
 
-    // Deep linking: si se llego con ?detalle=<uuid>, abrir ese detalle.
+    // Deep linking: si se llego con ?detalle=<uuid>, abrir ese detalle. Si
+    // ademas trae ?tarea=<uuid> (p. ej. desde una notificacion de asignacion),
+    // abrir la tarjeta directamente: abrirDetalle fija detalleId de forma
+    // sincrona y abrirDetalleTarea carga la tarjeta por su cuenta (ver_tarea.php).
     var detallePedido = AX.detalleSolicitado();
-    if (detallePedido) { abrirDetalle(detallePedido); }
+    if (detallePedido) {
+        abrirDetalle(detallePedido);
+        var tareaPedida = AX.tareaSolicitada();
+        if (tareaPedida) { abrirDetalleTarea(tareaPedida); }
+    }
 });

@@ -32,6 +32,11 @@ $rolUsuario    = $usuarioSesion['rol'] ?? '';
 
 $partes    = preg_split('/\s+/', trim($nombreUsuario));
 $iniciales = mb_strtoupper(mb_substr($partes[0] ?? '', 0, 1) . (isset($partes[1]) ? mb_substr($partes[1], 0, 1) : ''));
+
+// URL PUBLICA del server de sockets (tiempo real) para la campana de
+// notificaciones. Es shell-wide (la campana esta en todas las vistas privadas);
+// misma URL que usan los listados, sobreescribible por entorno (wss:// si HTTPS).
+$socketsWsUrl = getenv('AXISTENCE_SOCKETS_URL_PUBLICA') ?: 'http://127.0.0.1:3002';
 ?>
 <div class="app">
 
@@ -61,6 +66,29 @@ $iniciales = mb_strtoupper(mb_substr($partes[0] ?? '', 0, 1) . (isset($partes[1]
             </button>
 
             <h1 class="app-topbar__title"><?php echo htmlspecialchars($tituloSeccion); ?></h1>
+
+            <!-- Campana de notificaciones (shell-wide; la maneja app.js).
+                 Carga por GET al entrar y recibe el empuje en vivo por Socket.IO
+                 (data-ws = URL publica del server de sockets). -->
+            <div class="app-notif" id="appNotif" data-ws="<?php echo htmlspecialchars($socketsWsUrl); ?>">
+                <button class="app-notif__btn" type="button" id="notifToggle"
+                        aria-label="Notificaciones" aria-expanded="false" aria-haspopup="true">
+                    <i class="bi bi-bell" aria-hidden="true"></i>
+                    <span class="app-notif__badge d-none" id="notifBadge">0</span>
+                </button>
+                <div class="app-notif__panel d-none" id="notifPanel" role="dialog" aria-label="Notificaciones">
+                    <div class="app-notif__head">
+                        <span class="app-notif__head-title">Notificaciones</span>
+                        <div class="app-notif__head-acc">
+                            <button type="button" class="app-notif__link" id="notifLeerTodas">Marcar leídas</button>
+                            <button type="button" class="app-notif__link" id="notifLimpiar">Limpiar</button>
+                        </div>
+                    </div>
+                    <div class="app-notif__list" id="notifList">
+                        <div class="app-notif__empty">Cargando…</div>
+                    </div>
+                </div>
+            </div>
 
             <div class="app-topbar__user">
                 <div class="app-user">
